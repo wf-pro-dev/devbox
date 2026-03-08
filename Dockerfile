@@ -1,0 +1,37 @@
+# ── Stage 1: Build the Go binary ─────────────────────────────────────────
+FROM golang:1.26-alpine AS go-builder
+
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /app
+
+COPY go.mod go.sum* ./
+RUN go mod download
+
+COPY cmd/      cmd/
+COPY db/       db/
+COPY internal/ internal/
+COPY sqlc.yaml ./
+
+RUN CGO_ENABLED=1 go build -tags fts5 -ldflags="-s -w" -o /bin/devbox ./cmd/devbox
+
+
+# ── Stage 2: Minimal runtime ─────────────────────────────────────────────
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata openssh-client
+RUN addgroup -S devbox && adduser -S devbox -G devbox
+
+COPY --from=go-builder /bin/devbox /usr/local/bin/devbox
+
+RUN mkdir -p /data && chown devbox:devbox /data
+
+USER devbox
+
+EXPOSE 443 8888
+
+ENV DEVBOX_DB_PATH=/data/devbox.db \
+    DEVBOX_STORAGE_PATH=/data/blobs \
+    DEVBOX_HOSTNAME=devbox
+
+ENTRYPOINT ["/usr/local/bin/devbox"]

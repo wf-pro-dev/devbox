@@ -1,0 +1,54 @@
+services:
+
+  # ── Go backend — API + Tailscale ────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devbox-backend
+    restart: unless-stopped
+    networks:
+      - devbox-net
+    ports:
+      - "5174:8888"
+    environment:
+      TS_AUTHKEY:          ${TS_AUTHKEY}
+      DEVBOX_HOSTNAME:     ${DEVBOX_HOSTNAME:-devbox}
+      DEVBOX_DB_PATH:      /data/devbox.db
+      DEVBOX_STORAGE_PATH: /data/blobs
+      DEVBOX_LOCAL_ADDR:   0.0.0.0:8888
+    volumes:
+      - devbox-data:/data
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8888/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Svelte frontend — Nginx ──────────────────────────────────────────────
+  ui:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: devbox-ui
+    restart: unless-stopped
+    networks:
+      - devbox-net
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+networks:
+  devbox-net:
+    driver: bridge
+
+volumes:
+  devbox-data:
+    driver: local

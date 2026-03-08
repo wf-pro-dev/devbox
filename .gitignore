@@ -1,32 +1,113 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# ============================================================
+# devbox — .gitignore
+# Go backend + SvelteKit frontend + SQLite + Docker
+# ============================================================
+
+# ─── Secrets & environment ───────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+tailscale.state/
+ts-state/
+
+# ─── Go ──────────────────────────────────────────────────────
+# Binaries
+/devbox
+/devbox-cli
+cmd/devbox/devbox
+cmd/devbox-cli/devbox-cli
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Test & coverage
 *.test
-
-# Code coverage profiles and other test artifacts
 *.out
-coverage.*
-*.coverprofile
-profile.cov
+coverage.html
+coverage.txt
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
+# Go workspace
 go.work.sum
 
-# env file
-.env
+# Vendor (uncomment if not vendoring)
+# vendor/
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# ─── SQLite ──────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ─── Blob storage (local dev data) ───────────────────────────
+data/
+blobs/
+uploads/
+storage/local/
+
+# ─── SvelteKit / Node ────────────────────────────────────────
+web/node_modules/
+web/.svelte-kit/
+web/build/
+web/dist/
+web/.env
+web/.env.*
+!web/.env.example
+
+# Package manager locks (keep only one — uncomment yours)
+# web/package-lock.json
+# web/yarn.lock
+
+# ─── Frontend build output (embedded via Go embed.FS) ────────
+# The built frontend is embedded at build time, not committed
+internal/web/static/
+
+# ─── Docker ──────────────────────────────────────────────────
+.dockerignore.local
+
+# ─── OS & editor noise ───────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# JetBrains (GoLand, IntelliJ)
+.idea/
+*.iml
+
+# VSCode
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+
+# ─── Logs & temp ─────────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+
+# ─── croc temp files ─────────────────────────────────────────
+croc-*
+*.croc
