@@ -24,10 +24,14 @@ const maxUploadSize = 100 << 20 // 100 MB
 // fileResponse is the JSON shape returned for a single file.
 type fileResponse struct {
 	ID          string   `json:"id"`
-	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	FileName    string   `json:"file_name"`
+	DirID       *string  `json:"dir_id,omitempty"`
+	DirPrefix   string   `json:"dir_prefix,omitempty"`
 	Description string   `json:"description"`
 	Language    string   `json:"language"`
 	Size        int64    `json:"size"`
+	Version     int64    `json:"version"`
 	SHA256      string   `json:"sha256"`
 	UploadedBy  string   `json:"uploaded_by"`
 	CreatedAt   string   `json:"created_at"`
@@ -41,10 +45,14 @@ func fileToResponse(f db.File, tags []string) fileResponse {
 	}
 	return fileResponse{
 		ID:          f.ID,
-		Name:        f.Name,
+		Path:        f.Path,
+		FileName:    f.FileName,
+		DirID:       f.DirID,
+		DirPrefix:   f.DirPrefix,
 		Description: f.Description,
 		Language:    f.Language,
 		Size:        f.Size,
+		Version:     f.Version,
 		SHA256:      f.Sha256,
 		UploadedBy:  f.UploadedBy,
 		CreatedAt:   f.CreatedAt,
@@ -53,15 +61,12 @@ func fileToResponse(f db.File, tags []string) fileResponse {
 	}
 }
 
-// filesHandler groups the dependencies for file-related handlers.
 type filesHandler struct {
 	queries  *db.Queries
 	blobs    *storage.BlobStore
 	searcher *search.Searcher
 }
 
-// tagsForFiles fetches tags for a slice of files and returns a map of
-// fileID → tag names.
 func (h *filesHandler) tagsForFiles(ctx context.Context, files []db.File) map[string][]string {
 	result := make(map[string][]string, len(files))
 	for _, f := range files {
@@ -80,7 +85,6 @@ func (h *filesHandler) tagsForFiles(ctx context.Context, files []db.File) map[st
 }
 
 // handleListFiles handles GET /files
-// Supports ?tag=bash and ?q=search+term query params.
 func (h *filesHandler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -132,7 +136,6 @@ func (h *filesHandler) handleGetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If ?meta=true return JSON metadata only.
 	if r.URL.Query().Get("meta") == "true" {
 		tags, _ := h.queries.ListTagsForFile(ctx, id)
 		names := make([]string, len(tags))
@@ -143,7 +146,6 @@ func (h *filesHandler) handleGetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Otherwise stream the raw blob.
 	blob, err := h.blobs.Read(file.ID)
 	if err != nil {
 		jsonError(w, "blob not found", http.StatusNotFound)
@@ -152,9 +154,10 @@ func (h *filesHandler) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer blob.Close()
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.Name))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.FileName))
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-File-Name", file.Name)
+	w.Header().Set("X-File-Path", file.Path)
+	w.Header().Set("X-File-Name", file.FileName)
 	w.Header().Set("X-File-Language", file.Language)
 
 	if _, err := io.Copy(w, blob); err != nil {
@@ -179,21 +182,25 @@ func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) 
 	}
 	defer formFile.Close()
 
-	description := r.FormValue("description")
-	language := r.FormValue("language")
+	m := r.FormValue("metadata")
+
+	var metadata struct {
+		Description string `json:"description,omitempty"`
+		Language    string `json:"language,omitempty"`
+		Tags        string `json:"tags,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(m), &metadata); err != nil {
+		jsonError(w, "invalid metadata JSON", http.StatusBadRequest)
+		return
+	}
+
+	description := metadata.Description
+	language := metadata.Language
 	if language == "" {
 		language = detectLanguage(header.Filename)
 	}
 
-	// Parse comma-separated tags e.g. tags=bash,deploy,cron
-	var tagNames []string
-	if raw := r.FormValue("tags"); raw != "" {
-		for _, t := range strings.Split(raw, ",") {
-			if t = strings.TrimSpace(t); t != "" {
-				tagNames = append(tagNames, t)
-			}
-		}
-	}
+	tagNames := strings.Split(metadata.Tags, ",")
 
 	uploadedBy := "unknown"
 	if id, ok := auth.FromContext(ctx); ok {
@@ -201,9 +208,6 @@ func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) 
 	}
 
 	fileID := uuid.New().String()
-
-	// Read content into memory for both blob write and FTS indexing.
-	// For large files we write to disk and index separately.
 	size, sha256hex, err := h.blobs.Write(fileID, formFile)
 	if err != nil {
 		jsonError(w, "failed to store file", http.StatusInternalServerError)
@@ -211,9 +215,11 @@ func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	fileName := header.Filename
 	file, err := h.queries.CreateFile(ctx, db.CreateFileParams{
 		ID:          fileID,
-		Name:        header.Filename,
+		Path:        fileName,
+		FileName:    filepath.Base(fileName),
 		Description: description,
 		Language:    language,
 		Size:        size,
@@ -228,17 +234,36 @@ func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Update FTS content with the actual file content.
 	if err := h.searcher.UpdateContent(ctx, fileID, h.blobs); err != nil {
-		// Non-fatal — file is stored, search just won't find content yet.
 		log.Printf("FTS index %s: %v", fileID, err)
 	}
 
-	// Apply tags.
-	appliedTags := h.applyTags(ctx, fileID, tagNames)
+	var appliedTags []string
+	if len(tagNames) > 0 {
+		appliedTags = h.applyTags(ctx, fileID, tagNames)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	jsonOK(w, fileToResponse(file, appliedTags))
+}
+
+func (h *filesHandler) handleUpdateFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+
+	var req db.UpdateFileParams
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	file, err := h.queries.UpdateFile(ctx, req)
+	if err != nil {
+		jsonError(w, "failed to update file", http.StatusInternalServerError)
+		log.Printf("UpdateFile %s: %v", id, err)
+		return
+	}
+	jsonOK(w, fileToResponse(file, []string{}))
 }
 
 // handleDeleteFile handles DELETE /files/{id}
@@ -269,7 +294,6 @@ func (h *filesHandler) handleDeleteFile(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleAddTags handles POST /files/{id}/tags
-// Body: {"tags": ["bash", "deploy"]}
 func (h *filesHandler) handleAddTags(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -323,8 +347,6 @@ func (h *filesHandler) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// applyTags upserts the given tag names and associates them with fileID.
-// Returns the list of successfully applied tag names.
 func (h *filesHandler) applyTags(ctx context.Context, fileID string, names []string) []string {
 	var applied []string
 	for _, name := range names {
@@ -345,7 +367,6 @@ func (h *filesHandler) applyTags(ctx context.Context, fileID string, names []str
 	return applied
 }
 
-// detectLanguage guesses the language from the file extension.
 func detectLanguage(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {

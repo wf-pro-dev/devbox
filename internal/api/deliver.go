@@ -7,20 +7,21 @@ import (
 	"strings"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/internal/storage"
 	"github.com/wf-pro-dev/devbox/internal/transfer"
 	"tailscale.com/client/local"
 )
 
 type deliverHandler struct {
 	queries *db.Queries
-	blobs   interface{ BlobPath(id string) string }
+	blobs   *storage.BlobStore
 	lc      *local.Client
 }
 
 type deliverRequest struct {
-	Targets   []string `json:"targets"`   // list of hostnames, or empty if Broadcast
-	Broadcast bool     `json:"broadcast"` // send to all peers
-	DestDir   string   `json:"dest_dir"`  // optional, default ~/devbox-received
+	Targets   []string `json:"targets"`
+	Broadcast bool     `json:"broadcast"`
+	DestDir   string   `json:"dest_dir"`
 }
 
 type deliverResponse struct {
@@ -65,7 +66,7 @@ func (h *deliverHandler) handleDeliver(w http.ResponseWriter, r *http.Request) {
 
 	results := transfer.Deliver(ctx, h.lc, transfer.Delivery{
 		FileID:   file.ID,
-		FileName: file.Name,
+		FileName: file.FileName,
 		BlobPath: h.blobs.BlobPath(file.ID),
 		Targets:  targets,
 		DestDir:  req.DestDir,
@@ -73,19 +74,14 @@ func (h *deliverHandler) handleDeliver(w http.ResponseWriter, r *http.Request) {
 
 	resp := deliverResponse{Results: make([]deliverResult, len(results))}
 	for i, res := range results {
-		resp.Results[i] = deliverResult{
-			Target:  res.Target,
-			Success: res.Err == nil,
-		}
+		resp.Results[i] = deliverResult{Target: res.Target, Success: res.Err == nil}
 		if res.Err != nil {
 			resp.Results[i].Error = res.Err.Error()
 		}
 	}
-
 	jsonOK(w, resp)
 }
 
-// handleListPeers handles GET /peers — returns all visible tailnet peers.
 func (h *deliverHandler) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	status, err := h.lc.Status(r.Context())
 	if err != nil {
@@ -100,25 +96,19 @@ func (h *deliverHandler) handleListPeers(w http.ResponseWriter, r *http.Request)
 		Online   bool   `json:"online"`
 	}
 
-	peers := []peer{}
+	var peers []peer
 	for _, p := range status.Peer {
 		dns := strings.TrimSuffix(p.DNSName, ".")
-		short := dns
-		if parts := strings.SplitN(dns, ".", 2); len(parts) > 0 {
-			short = parts[0]
-		}
+		short := strings.SplitN(dns, ".", 2)[0]
 		ip := ""
 		if len(p.TailscaleIPs) > 0 {
 			ip = p.TailscaleIPs[0].String()
 		}
-		peers = append(peers, peer{
-			Hostname: short,
-			DNSName:  dns,
-			IP:       ip,
-			Online:   p.Online,
-		})
+		peers = append(peers, peer{Hostname: short, DNSName: dns, IP: ip, Online: p.Online})
 	}
-
+	if peers == nil {
+		peers = []peer{}
+	}
 	jsonOK(w, peers)
 }
 
@@ -126,13 +116,10 @@ func (h *deliverHandler) resolveTargets(ctx context.Context, req deliverRequest)
 	if !req.Broadcast {
 		return req.Targets, nil
 	}
-
-	// Broadcast: resolve all online peers.
 	status, err := h.lc.Status(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	var targets []string
 	for _, p := range status.Peer {
 		if !p.Online {

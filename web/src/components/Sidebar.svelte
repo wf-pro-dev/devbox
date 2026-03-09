@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { formatDate, api } from '../api.js';
+  import { formatDate, listPeers } from '../api.js';
 
 
   export let health = null;
@@ -15,7 +15,7 @@
 
   onMount(async () => {
     try {
-      peers = await api.listPeers();
+      peers = await listPeers();
     } catch (e) {
       error = e.message;
     } finally {

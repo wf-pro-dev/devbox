@@ -41,7 +41,7 @@ func (s *Searcher) SearchFiles(ctx context.Context, query string) ([]db.File, er
 	for rows.Next() {
 		var f db.File
 		if err := rows.Scan(
-			&f.ID, &f.Name, &f.Description, &f.Language, &f.Size,
+			&f.ID, &f.Path, &f.FileName, &f.Description, &f.Language, &f.Size,
 			&f.BlobPath, &f.Sha256, &f.UploadedBy, &f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)

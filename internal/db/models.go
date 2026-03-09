@@ -4,17 +4,31 @@
 
 package db
 
-type File struct {
+type Directory struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
+	Prefix      string `json:"prefix"`
 	Description string `json:"description"`
-	Language    string `json:"language"`
-	Size        int64  `json:"size"`
-	BlobPath    string `json:"blob_path"`
-	Sha256      string `json:"sha256"`
 	UploadedBy  string `json:"uploaded_by"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+type File struct {
+	ID          string  `json:"id"`
+	Path        string  `json:"path"`
+	FileName    string  `json:"file_name"`
+	DirID       *string `json:"dir_id"`
+	DirPrefix   string  `json:"dir_prefix"`
+	Description string  `json:"description"`
+	Language    string  `json:"language"`
+	Size        int64   `json:"size"`
+	BlobPath    string  `json:"blob_path"`
+	Sha256      string  `json:"sha256"`
+	UploadedBy  string  `json:"uploaded_by"`
+	Version     int64   `json:"version"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
 }
 
 type FileTag struct {
@@ -24,7 +38,7 @@ type FileTag struct {
 
 type FilesFt struct {
 	FileID      string `json:"file_id"`
-	Name        string `json:"name"`
+	Path        string `json:"path"`
 	Description string `json:"description"`
 	Content     string `json:"content"`
 }
@@ -45,11 +59,13 @@ type Transfer struct {
 }
 
 type Version struct {
-	ID         int64  `json:"id"`
-	FileID     string `json:"file_id"`
-	BlobPath   string `json:"blob_path"`
-	Sha256     string `json:"sha256"`
-	Size       int64  `json:"size"`
-	UploadedBy string `json:"uploaded_by"`
-	CreatedAt  string `json:"created_at"`
+	ID            int64  `json:"id"`
+	FileID        string `json:"file_id"`
+	VersionNumber int64  `json:"version_number"`
+	BlobPath      string `json:"blob_path"`
+	Sha256        string `json:"sha256"`
+	Size          int64  `json:"size"`
+	UploadedBy    string `json:"uploaded_by"`
+	Message       string `json:"message"`
+	CreatedAt     string `json:"created_at"`
 }

@@ -12,26 +12,20 @@ export const api = {
   listFiles: (params) => {
     const qs = new URLSearchParams();
     if (params?.tag) qs.set('tag', params.tag);
-    if (params?.q) qs.set('q', params.q);
+    if (params?.q)   qs.set('q', params.q);
     const query = qs.toString() ? `?${qs}` : '';
     return request(`/files${query}`);
   },
   getFileMeta: (id) => request(`/files/${id}?meta=true`),
-  uploadFile: (form) => request('/files', { method: 'POST', body: form }),
-  deleteFile: (id) => request(`/files/${id}`, { method: 'DELETE' }),
+  uploadFile:  (form) => request('/files', { method: 'POST', body: form }),
+  deleteFile:  (id) => request(`/files/${id}`, { method: 'DELETE' }),
   addTags: (id, tags) => request(`/files/${id}/tags`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tags })
   }),
   removeTag: (id, tag) => request(`/files/${id}/tags/${tag}`, { method: 'DELETE' }),
-  listPeers: () => request('/peers', { method: 'GET' }),
-  deliverFile: (id, targets, broadcast, destDir) => request(`/files/${id}/deliver`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targets, broadcast, destDir })
-  }),
-  health: () => request('/health')
+  health: () => request('/health'),
 };
 
 export function formatBytes(bytes) {
@@ -58,3 +52,29 @@ export function langColor(lang) {
   };
   return colors[lang] ?? '#94a3b8';
 }
+
+// Delivery
+export const deliverFile = (id, targets, broadcast = false, destDir = '') =>
+  request(`/files/${id}/deliver`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targets, broadcast, dest_dir: destDir })
+  });
+
+export const listPeers = () => request('/peers');
+
+// Directories
+export const listDirectories = () => request('/directories');
+export const getDirectory = (id) => request(`/directories/${id}`);
+export const deleteDirectory = (id) => request(`/directories/${id}`, { method: 'DELETE' });
+export const tagDirectory = (id, tags) => request(`/directories/${id}/tags`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ tags })
+});
+export const deliverDirectory = (id, targets, broadcast = false, destDir = '') =>
+  request(`/directories/${id}/deliver`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targets, broadcast, dest_dir: destDir })
+  });

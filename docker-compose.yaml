@@ -17,6 +17,7 @@ services:
       DEVBOX_DB_PATH:      /data/devbox.db
       DEVBOX_STORAGE_PATH: /data/blobs
       DEVBOX_LOCAL_ADDR:   0.0.0.0:8888
+      DEVBOX_MAX_VERSIONS: ${DEVBOX_MAX_VERSIONS:-10}
     volumes:
       - devbox-data:/data
     devices:

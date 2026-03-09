@@ -10,7 +10,10 @@
 
 <button class="card" class:selected on:click={() => dispatch('click')}>
   <div class="top">
-    <span class="filename">{file.name}</span>
+    <span class="filename">{file.file_name || file.path}</span>
+    {#if file.dir_id}
+      <span class="dir-badge" title={file.path}>📁 {file.path.split('/')[0]}</span>
+    {/if}
     <span class="lang" style="--c:{langColor(file.language)}">{file.language}</span>
   </div>
   {#if file.description}
@@ -46,6 +49,12 @@
   .filename {
     font-family: var(--mono); font-size: 13px; font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .dir-badge {
+    font-size: 10px; color: var(--text-3); background: var(--bg-3);
+    padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
+    white-space: nowrap; font-family: var(--mono);
   }
 
   .lang {

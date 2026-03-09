@@ -5,6 +5,9 @@
   import Sidebar from './components/Sidebar.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
   import UploadModal from './components/UploadModal.svelte';
+  import DirectoriesTab from './components/DirectoriesTab.svelte';
+
+  let activeMainTab = 'files'; // 'files' | 'directories'
 
   let files = [];
   let health = null;
@@ -92,6 +95,19 @@
     />
 
     <main>
+      <div class="tab-bar">
+        <button class="tab-btn" class:active={activeMainTab === 'files'} on:click={() => activeMainTab = 'files'}>
+          Files
+        </button>
+        <button class="tab-btn" class:active={activeMainTab === 'directories'} on:click={() => activeMainTab = 'directories'}>
+          Directories
+        </button>
+      </div>
+
+      {#if activeMainTab === 'directories'}
+        <DirectoriesTab onFileSelect={(f) => selectedFile = f} />
+      {:else}
+
       {#if activeTag || searchQuery}
         <div class="filter-bar">
           {#if searchQuery}
@@ -130,6 +146,8 @@
           {/each}
         </div>
       {/if}
+
+      {/if} <!-- end files tab -->
     </main>
 
     {#if selectedFile}
@@ -220,7 +238,18 @@
 
   .body { display: flex; flex: 1; overflow: hidden; }
 
-  main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .tab-bar {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    padding: 0 24px; background: white; flex-shrink: 0;
+  }
+  .tab-btn {
+    padding: 12px 18px; background: none; border: none; border-bottom: 2px solid transparent;
+    font-size: 13px; font-weight: 500; color: var(--text-3); cursor: pointer;
+    margin-bottom: -1px; transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
 
   .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .chip {
@@ -242,7 +271,7 @@
     border-radius: var(--radius); color: #dc2626; font-size: 13px; margin-bottom: 16px;
   }
 
-  .grid { display: grid; column-count: 3; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 
   .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; gap: 8px; }
   .empty-title { font-family: var(--serif); font-size: 20px; }

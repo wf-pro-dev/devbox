@@ -46,3 +46,10 @@ func Open(path string) (*Store, error) {
 		DB:      sqlDB,
 	}, nil
 }
+
+func NullText(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

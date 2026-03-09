@@ -51,7 +51,7 @@ func (q *Queries) GetTagByName(ctx context.Context, name string) (Tag, error) {
 }
 
 const listFilesForTag = `-- name: ListFilesForTag :many
-SELECT f.id, f.name, f.description, f.language, f.size, f.blob_path, f.sha256, f.uploaded_by, f.created_at, f.updated_at FROM files f
+SELECT f.id, f.path, f.file_name, f.dir_id, f.dir_prefix, f.description, f.language, f.size, f.blob_path, f.sha256, f.uploaded_by, f.version, f.created_at, f.updated_at FROM files f
 JOIN file_tags ft ON ft.file_id = f.id
 JOIN tags t ON t.id = ft.tag_id
 WHERE t.name = ?
@@ -69,13 +69,17 @@ func (q *Queries) ListFilesForTag(ctx context.Context, name string) ([]File, err
 		var i File
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.Path,
+			&i.FileName,
+			&i.DirID,
+			&i.DirPrefix,
 			&i.Description,
 			&i.Language,
 			&i.Size,
 			&i.BlobPath,
 			&i.Sha256,
 			&i.UploadedBy,
+			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

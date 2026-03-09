@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countVersionsForFile = `-- name: CountVersionsForFile :one
+SELECT COUNT(*) FROM versions WHERE file_id = ?
+`
+
+func (q *Queries) CountVersionsForFile(ctx context.Context, fileID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countVersionsForFile, fileID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTransfer = `-- name: CreateTransfer :one
 INSERT INTO transfers (from_host, to_host, filename, size, duration_ms)
 VALUES (?, ?, ?, ?, ?)
@@ -44,44 +55,75 @@ func (q *Queries) CreateTransfer(ctx context.Context, arg CreateTransferParams) 
 	return i, err
 }
 
-const createVersion = `-- name: CreateVersion :one
-INSERT INTO versions (file_id, blob_path, sha256, size, uploaded_by)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, file_id, blob_path, sha256, size, uploaded_by, created_at
+const getLatestVersionNumber = `-- name: GetLatestVersionNumber :one
+SELECT COALESCE(MAX(version_number), 0) FROM versions WHERE file_id = ?
 `
 
-type CreateVersionParams struct {
-	FileID     string `json:"file_id"`
-	BlobPath   string `json:"blob_path"`
-	Sha256     string `json:"sha256"`
-	Size       int64  `json:"size"`
-	UploadedBy string `json:"uploaded_by"`
+func (q *Queries) GetLatestVersionNumber(ctx context.Context, fileID string) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getLatestVersionNumber, fileID)
+	var coalesce interface{}
+	err := row.Scan(&coalesce)
+	return coalesce, err
 }
 
-func (q *Queries) CreateVersion(ctx context.Context, arg CreateVersionParams) (Version, error) {
-	row := q.db.QueryRowContext(ctx, createVersion,
-		arg.FileID,
-		arg.BlobPath,
-		arg.Sha256,
-		arg.Size,
-		arg.UploadedBy,
-	)
-	var i Version
-	err := row.Scan(
-		&i.ID,
-		&i.FileID,
-		&i.BlobPath,
-		&i.Sha256,
-		&i.Size,
-		&i.UploadedBy,
-		&i.CreatedAt,
-	)
-	return i, err
+const getMinVersionToKeep = `-- name: GetMinVersionToKeep :one
+SELECT COALESCE(MIN(version_number), 0)
+FROM (
+    SELECT version_number FROM versions
+    WHERE file_id = ?
+    ORDER BY version_number DESC
+    LIMIT ?
+) AS kept
+`
+
+type GetMinVersionToKeepParams struct {
+	FileID string `json:"file_id"`
+	Limit  int64  `json:"limit"`
+}
+
+func (q *Queries) GetMinVersionToKeep(ctx context.Context, arg GetMinVersionToKeepParams) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getMinVersionToKeep, arg.FileID, arg.Limit)
+	var coalesce interface{}
+	err := row.Scan(&coalesce)
+	return coalesce, err
+}
+
+const getOldBlobPaths = `-- name: GetOldBlobPaths :many
+SELECT blob_path FROM versions
+WHERE file_id = ?
+  AND version_number < ?
+`
+
+type GetOldBlobPathsParams struct {
+	FileID        string `json:"file_id"`
+	VersionNumber int64  `json:"version_number"`
+}
+
+func (q *Queries) GetOldBlobPaths(ctx context.Context, arg GetOldBlobPathsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getOldBlobPaths, arg.FileID, arg.VersionNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var blob_path string
+		if err := rows.Scan(&blob_path); err != nil {
+			return nil, err
+		}
+		items = append(items, blob_path)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTransfers = `-- name: ListTransfers :many
-SELECT id, from_host, to_host, filename, size, duration_ms, created_at FROM transfers
-ORDER BY created_at DESC
+SELECT id, from_host, to_host, filename, size, duration_ms, created_at FROM transfers ORDER BY created_at DESC
 `
 
 func (q *Queries) ListTransfers(ctx context.Context) ([]Transfer, error) {
@@ -116,9 +158,9 @@ func (q *Queries) ListTransfers(ctx context.Context) ([]Transfer, error) {
 }
 
 const listVersionsForFile = `-- name: ListVersionsForFile :many
-SELECT id, file_id, blob_path, sha256, size, uploaded_by, created_at FROM versions
+SELECT id, file_id, version_number, blob_path, sha256, size, uploaded_by, message, created_at FROM versions
 WHERE file_id = ?
-ORDER BY created_at DESC
+ORDER BY version_number DESC
 `
 
 func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Version, error) {
@@ -133,10 +175,12 @@ func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Ver
 		if err := rows.Scan(
 			&i.ID,
 			&i.FileID,
+			&i.VersionNumber,
 			&i.BlobPath,
 			&i.Sha256,
 			&i.Size,
 			&i.UploadedBy,
+			&i.Message,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -150,4 +194,61 @@ func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Ver
 		return nil, err
 	}
 	return items, nil
+}
+
+const pruneOldVersions = `-- name: PruneOldVersions :exec
+DELETE FROM versions
+WHERE file_id = ?
+  AND version_number < ?
+`
+
+type PruneOldVersionsParams struct {
+	FileID        string `json:"file_id"`
+	VersionNumber int64  `json:"version_number"`
+}
+
+func (q *Queries) PruneOldVersions(ctx context.Context, arg PruneOldVersionsParams) error {
+	_, err := q.db.ExecContext(ctx, pruneOldVersions, arg.FileID, arg.VersionNumber)
+	return err
+}
+
+const snapshotVersion = `-- name: SnapshotVersion :one
+INSERT INTO versions (file_id, version_number, blob_path, sha256, size, uploaded_by, message)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, file_id, version_number, blob_path, sha256, size, uploaded_by, message, created_at
+`
+
+type SnapshotVersionParams struct {
+	FileID        string `json:"file_id"`
+	VersionNumber int64  `json:"version_number"`
+	BlobPath      string `json:"blob_path"`
+	Sha256        string `json:"sha256"`
+	Size          int64  `json:"size"`
+	UploadedBy    string `json:"uploaded_by"`
+	Message       string `json:"message"`
+}
+
+func (q *Queries) SnapshotVersion(ctx context.Context, arg SnapshotVersionParams) (Version, error) {
+	row := q.db.QueryRowContext(ctx, snapshotVersion,
+		arg.FileID,
+		arg.VersionNumber,
+		arg.BlobPath,
+		arg.Sha256,
+		arg.Size,
+		arg.UploadedBy,
+		arg.Message,
+	)
+	var i Version
+	err := row.Scan(
+		&i.ID,
+		&i.FileID,
+		&i.VersionNumber,
+		&i.BlobPath,
+		&i.Sha256,
+		&i.Size,
+		&i.UploadedBy,
+		&i.Message,
+		&i.CreatedAt,
+	)
+	return i, err
 }

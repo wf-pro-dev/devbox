@@ -83,7 +83,20 @@ func (bs *BlobStore) Delete(fileID string) error {
 	return nil
 }
 
-// path returns the full disk path for a given fileID.
+// Replace atomically replaces the blob at dstID with the blob at srcID,
+// then deletes srcID. Used to promote a temp blob to the canonical path.
+func (bs *BlobStore) Replace(dstID, srcID string) error {
+	srcPath := bs.path(srcID)
+	dstPath := bs.path(dstID)
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return fmt.Errorf("create dst dir: %w", err)
+	}
+	if err := os.Rename(srcPath, dstPath); err != nil {
+		return fmt.Errorf("replace blob: %w", err)
+	}
+	return nil
+}
+
 // Files are sharded into subdirectories using the first 2 chars of the ID
 // to avoid having too many files in a single directory.
 func (bs *BlobStore) path(fileID string) string {
