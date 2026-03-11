@@ -1,42 +1,50 @@
 -- name: SnapshotVersion :one
-INSERT INTO versions (file_id, version_number, blob_path, sha256, size, uploaded_by, message)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO versions (file_id, version, sha256, size, uploaded_by, message)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetLatestVersionNumber :one
-SELECT COALESCE(MAX(version_number), 0) FROM versions WHERE file_id = ?;
+SELECT COALESCE(MAX(version), 0) FROM versions WHERE file_id = ?;
 
--- name: ListVersionsForFile :many
-SELECT * FROM versions
-WHERE file_id = ?
-ORDER BY version_number DESC;
+-- ListVersions is the single entry point for querying versions.
+-- Pass NULL for any filter you want to ignore.
+-- file_id: versions for a single file
+-- prefix : versions for all files whose path starts with prefix
+-- Both can be set at once to scope to a file within a prefix.
+-- name: ListVersions :many
+SELECT v.*
+FROM versions v
+JOIN files f ON f.id = v.file_id
+WHERE (sqlc.narg(file_id) IS NULL OR v.file_id  =    sqlc.narg(file_id))
+  AND (sqlc.narg(prefix)  IS NULL OR f.path LIKE sqlc.narg(prefix) || '%')
+ORDER BY f.path ASC, v.version DESC;
 
 -- name: CountVersionsForFile :one
 SELECT COUNT(*) FROM versions WHERE file_id = ?;
 
 -- name: GetMinVersionToKeep :one
-SELECT COALESCE(MIN(version_number), 0)
+SELECT COALESCE(MIN(version), 0)
 FROM (
-    SELECT version_number FROM versions
+    SELECT version FROM versions
     WHERE file_id = ?
-    ORDER BY version_number DESC
+    ORDER BY version DESC
     LIMIT ?
 ) AS kept;
 
--- name: GetOldBlobPaths :many
-SELECT blob_path FROM versions
+-- name: ListPrunableVersions :many
+SELECT sha256, version FROM versions
 WHERE file_id = ?
-  AND version_number < ?;
+  AND version < ?;
 
 -- name: PruneOldVersions :exec
 DELETE FROM versions
 WHERE file_id = ?
-  AND version_number < ?;
+  AND version < ?;
 
 -- name: CreateTransfer :one
-INSERT INTO transfers (from_host, to_host, filename, size, duration_ms)
+INSERT INTO transfers (from_host, to_host, file_path, size, duration_ms)
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListTransfers :many
-SELECT * FROM transfers ORDER BY created_at DESC;
+SELECT * FROM transfers ORDER BY created_at DESC LIMIT 100;

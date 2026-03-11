@@ -11,6 +11,7 @@ RUN go mod download
 COPY cmd/      cmd/
 COPY db/       db/
 COPY internal/ internal/
+COPY types/    types/
 COPY sqlc.yaml ./
 
 RUN CGO_ENABLED=1 go build -tags fts5 -ldflags="-s -w" -o /bin/devbox ./cmd/devbox

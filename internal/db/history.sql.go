@@ -21,15 +21,15 @@ func (q *Queries) CountVersionsForFile(ctx context.Context, fileID string) (int6
 }
 
 const createTransfer = `-- name: CreateTransfer :one
-INSERT INTO transfers (from_host, to_host, filename, size, duration_ms)
+INSERT INTO transfers (from_host, to_host, file_path, size, duration_ms)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, from_host, to_host, filename, size, duration_ms, created_at
+RETURNING id, from_host, to_host, file_path, size, duration_ms, created_at
 `
 
 type CreateTransferParams struct {
 	FromHost   string `json:"from_host"`
 	ToHost     string `json:"to_host"`
-	Filename   string `json:"filename"`
+	FilePath   string `json:"file_path"`
 	Size       int64  `json:"size"`
 	DurationMs int64  `json:"duration_ms"`
 }
@@ -38,7 +38,7 @@ func (q *Queries) CreateTransfer(ctx context.Context, arg CreateTransferParams) 
 	row := q.db.QueryRowContext(ctx, createTransfer,
 		arg.FromHost,
 		arg.ToHost,
-		arg.Filename,
+		arg.FilePath,
 		arg.Size,
 		arg.DurationMs,
 	)
@@ -47,7 +47,7 @@ func (q *Queries) CreateTransfer(ctx context.Context, arg CreateTransferParams) 
 		&i.ID,
 		&i.FromHost,
 		&i.ToHost,
-		&i.Filename,
+		&i.FilePath,
 		&i.Size,
 		&i.DurationMs,
 		&i.CreatedAt,
@@ -56,7 +56,7 @@ func (q *Queries) CreateTransfer(ctx context.Context, arg CreateTransferParams) 
 }
 
 const getLatestVersionNumber = `-- name: GetLatestVersionNumber :one
-SELECT COALESCE(MAX(version_number), 0) FROM versions WHERE file_id = ?
+SELECT COALESCE(MAX(version), 0) FROM versions WHERE file_id = ?
 `
 
 func (q *Queries) GetLatestVersionNumber(ctx context.Context, fileID string) (interface{}, error) {
@@ -67,11 +67,11 @@ func (q *Queries) GetLatestVersionNumber(ctx context.Context, fileID string) (in
 }
 
 const getMinVersionToKeep = `-- name: GetMinVersionToKeep :one
-SELECT COALESCE(MIN(version_number), 0)
+SELECT COALESCE(MIN(version), 0)
 FROM (
-    SELECT version_number FROM versions
+    SELECT version FROM versions
     WHERE file_id = ?
-    ORDER BY version_number DESC
+    ORDER BY version DESC
     LIMIT ?
 ) AS kept
 `
@@ -88,30 +88,35 @@ func (q *Queries) GetMinVersionToKeep(ctx context.Context, arg GetMinVersionToKe
 	return coalesce, err
 }
 
-const getOldBlobPaths = `-- name: GetOldBlobPaths :many
-SELECT blob_path FROM versions
+const listPrunableVersions = `-- name: ListPrunableVersions :many
+SELECT sha256, version FROM versions
 WHERE file_id = ?
-  AND version_number < ?
+  AND version < ?
 `
 
-type GetOldBlobPathsParams struct {
-	FileID        string `json:"file_id"`
-	VersionNumber int64  `json:"version_number"`
+type ListPrunableVersionsParams struct {
+	FileID  string `json:"file_id"`
+	Version int64  `json:"version"`
 }
 
-func (q *Queries) GetOldBlobPaths(ctx context.Context, arg GetOldBlobPathsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getOldBlobPaths, arg.FileID, arg.VersionNumber)
+type ListPrunableVersionsRow struct {
+	Sha256  string `json:"sha256"`
+	Version int64  `json:"version"`
+}
+
+func (q *Queries) ListPrunableVersions(ctx context.Context, arg ListPrunableVersionsParams) ([]ListPrunableVersionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPrunableVersions, arg.FileID, arg.Version)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []ListPrunableVersionsRow{}
 	for rows.Next() {
-		var blob_path string
-		if err := rows.Scan(&blob_path); err != nil {
+		var i ListPrunableVersionsRow
+		if err := rows.Scan(&i.Sha256, &i.Version); err != nil {
 			return nil, err
 		}
-		items = append(items, blob_path)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -123,7 +128,7 @@ func (q *Queries) GetOldBlobPaths(ctx context.Context, arg GetOldBlobPathsParams
 }
 
 const listTransfers = `-- name: ListTransfers :many
-SELECT id, from_host, to_host, filename, size, duration_ms, created_at FROM transfers ORDER BY created_at DESC
+SELECT id, from_host, to_host, file_path, size, duration_ms, created_at FROM transfers ORDER BY created_at DESC LIMIT 100
 `
 
 func (q *Queries) ListTransfers(ctx context.Context) ([]Transfer, error) {
@@ -139,7 +144,7 @@ func (q *Queries) ListTransfers(ctx context.Context) ([]Transfer, error) {
 			&i.ID,
 			&i.FromHost,
 			&i.ToHost,
-			&i.Filename,
+			&i.FilePath,
 			&i.Size,
 			&i.DurationMs,
 			&i.CreatedAt,
@@ -157,14 +162,27 @@ func (q *Queries) ListTransfers(ctx context.Context) ([]Transfer, error) {
 	return items, nil
 }
 
-const listVersionsForFile = `-- name: ListVersionsForFile :many
-SELECT id, file_id, version_number, blob_path, sha256, size, uploaded_by, message, created_at FROM versions
-WHERE file_id = ?
-ORDER BY version_number DESC
+const listVersions = `-- name: ListVersions :many
+SELECT v.id, v.file_id, v.version, v.sha256, v.size, v.uploaded_by, v.message, v.created_at
+FROM versions v
+JOIN files f ON f.id = v.file_id
+WHERE (?1 IS NULL OR v.file_id  =    ?1)
+  AND (?2  IS NULL OR f.path LIKE ?2 || '%')
+ORDER BY f.path ASC, v.version DESC
 `
 
-func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Version, error) {
-	rows, err := q.db.QueryContext(ctx, listVersionsForFile, fileID)
+type ListVersionsParams struct {
+	FileID interface{} `json:"file_id"`
+	Prefix interface{} `json:"prefix"`
+}
+
+// ListVersions is the single entry point for querying versions.
+// Pass NULL for any filter you want to ignore.
+// file_id: versions for a single file
+// prefix : versions for all files whose path starts with prefix
+// Both can be set at once to scope to a file within a prefix.
+func (q *Queries) ListVersions(ctx context.Context, arg ListVersionsParams) ([]Version, error) {
+	rows, err := q.db.QueryContext(ctx, listVersions, arg.FileID, arg.Prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +193,7 @@ func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Ver
 		if err := rows.Scan(
 			&i.ID,
 			&i.FileID,
-			&i.VersionNumber,
-			&i.BlobPath,
+			&i.Version,
 			&i.Sha256,
 			&i.Size,
 			&i.UploadedBy,
@@ -199,40 +216,38 @@ func (q *Queries) ListVersionsForFile(ctx context.Context, fileID string) ([]Ver
 const pruneOldVersions = `-- name: PruneOldVersions :exec
 DELETE FROM versions
 WHERE file_id = ?
-  AND version_number < ?
+  AND version < ?
 `
 
 type PruneOldVersionsParams struct {
-	FileID        string `json:"file_id"`
-	VersionNumber int64  `json:"version_number"`
+	FileID  string `json:"file_id"`
+	Version int64  `json:"version"`
 }
 
 func (q *Queries) PruneOldVersions(ctx context.Context, arg PruneOldVersionsParams) error {
-	_, err := q.db.ExecContext(ctx, pruneOldVersions, arg.FileID, arg.VersionNumber)
+	_, err := q.db.ExecContext(ctx, pruneOldVersions, arg.FileID, arg.Version)
 	return err
 }
 
 const snapshotVersion = `-- name: SnapshotVersion :one
-INSERT INTO versions (file_id, version_number, blob_path, sha256, size, uploaded_by, message)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, file_id, version_number, blob_path, sha256, size, uploaded_by, message, created_at
+INSERT INTO versions (file_id, version, sha256, size, uploaded_by, message)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, file_id, version, sha256, size, uploaded_by, message, created_at
 `
 
 type SnapshotVersionParams struct {
-	FileID        string `json:"file_id"`
-	VersionNumber int64  `json:"version_number"`
-	BlobPath      string `json:"blob_path"`
-	Sha256        string `json:"sha256"`
-	Size          int64  `json:"size"`
-	UploadedBy    string `json:"uploaded_by"`
-	Message       string `json:"message"`
+	FileID     string `json:"file_id"`
+	Version    int64  `json:"version"`
+	Sha256     string `json:"sha256"`
+	Size       int64  `json:"size"`
+	UploadedBy string `json:"uploaded_by"`
+	Message    string `json:"message"`
 }
 
 func (q *Queries) SnapshotVersion(ctx context.Context, arg SnapshotVersionParams) (Version, error) {
 	row := q.db.QueryRowContext(ctx, snapshotVersion,
 		arg.FileID,
-		arg.VersionNumber,
-		arg.BlobPath,
+		arg.Version,
 		arg.Sha256,
 		arg.Size,
 		arg.UploadedBy,
@@ -242,8 +257,7 @@ func (q *Queries) SnapshotVersion(ctx context.Context, arg SnapshotVersionParams
 	err := row.Scan(
 		&i.ID,
 		&i.FileID,
-		&i.VersionNumber,
-		&i.BlobPath,
+		&i.Version,
 		&i.Sha256,
 		&i.Size,
 		&i.UploadedBy,

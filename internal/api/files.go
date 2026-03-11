@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -17,156 +18,117 @@ import (
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/search"
 	"github.com/wf-pro-dev/devbox/internal/storage"
+	"github.com/wf-pro-dev/devbox/internal/version"
+	"github.com/wf-pro-dev/devbox/types"
 )
 
 const maxUploadSize = 100 << 20 // 100 MB
 
-// fileResponse is the JSON shape returned for a single file.
-type fileResponse struct {
-	ID          string   `json:"id"`
-	Path        string   `json:"path"`
-	FileName    string   `json:"file_name"`
-	DirID       *string  `json:"dir_id,omitempty"`
-	DirPrefix   string   `json:"dir_prefix,omitempty"`
-	Description string   `json:"description"`
-	Language    string   `json:"language"`
-	Size        int64    `json:"size"`
-	Version     int64    `json:"version"`
-	SHA256      string   `json:"sha256"`
-	UploadedBy  string   `json:"uploaded_by"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
-	Tags        []string `json:"tags"`
-}
-
-func fileToResponse(f db.File, tags []string) fileResponse {
-	if tags == nil {
-		tags = []string{}
-	}
-	return fileResponse{
-		ID:          f.ID,
-		Path:        f.Path,
-		FileName:    f.FileName,
-		DirID:       f.DirID,
-		DirPrefix:   f.DirPrefix,
-		Description: f.Description,
-		Language:    f.Language,
-		Size:        f.Size,
-		Version:     f.Version,
-		SHA256:      f.Sha256,
-		UploadedBy:  f.UploadedBy,
-		CreatedAt:   f.CreatedAt,
-		UpdatedAt:   f.UpdatedAt,
-		Tags:        tags,
-	}
-}
-
 type filesHandler struct {
-	queries  *db.Queries
+	store    *storage.Store
 	blobs    *storage.BlobStore
 	searcher *search.Searcher
+	verSvc   *version.Service
 }
 
-func (h *filesHandler) tagsForFiles(ctx context.Context, files []db.File) map[string][]string {
-	result := make(map[string][]string, len(files))
-	for _, f := range files {
-		tags, err := h.queries.ListTagsForFile(ctx, f.ID)
+// ── GET /files ────────────────────────────────────────────────────────────────
+// Query params (all optional, combinable):
+//   ?q=<fts>      full-text search (handled separately, bypasses ListFiles)
+//   ?dir=<prefix> filter by path prefix
+//   ?tag=<name>   filter by tag
+//   ?lang=<lang>  filter by language
+
+func (h *filesHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	// FTS is a separate code path — cannot be expressed as a SQL filter.
+	if fts := q.Get("q"); fts != "" {
+		files, err := h.searcher.SearchFiles(ctx, fts)
 		if err != nil {
-			result[f.ID] = []string{}
-			continue
-		}
-		names := make([]string, len(tags))
-		for i, t := range tags {
-			names[i] = t.Name
-		}
-		result[f.ID] = names
-	}
-	return result
-}
-
-// handleListFiles handles GET /files
-func (h *filesHandler) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	tag := r.URL.Query().Get("tag")
-	q := r.URL.Query().Get("q")
-
-	var (
-		files []db.File
-		err   error
-	)
-
-	switch {
-	case q != "":
-		files, err = h.searcher.SearchFiles(ctx, q)
-	case tag != "":
-		files, err = h.queries.ListFilesForTag(ctx, tag)
-	default:
-		files, err = h.queries.ListFiles(ctx)
-	}
-
-	if err != nil {
-		jsonError(w, "failed to list files", http.StatusInternalServerError)
-		log.Printf("ListFiles: %v", err)
-		return
-	}
-
-	tagsMap := h.tagsForFiles(ctx, files)
-	resp := make([]fileResponse, len(files))
-	for i, f := range files {
-		resp[i] = fileToResponse(f, tagsMap[f.ID])
-	}
-
-	jsonOK(w, resp)
-}
-
-// handleGetFile handles GET /files/{id}
-func (h *filesHandler) handleGetFile(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := r.PathValue("id")
-
-	file, err := h.queries.GetFile(ctx, id)
-	if err != nil {
-		if isNotFound(err) {
-			jsonError(w, "file not found", http.StatusNotFound)
+			jsonError(w, "search failed", http.StatusInternalServerError)
+			log.Printf("search files: %v", err)
 			return
 		}
-		jsonError(w, "failed to get file", http.StatusInternalServerError)
-		log.Printf("GetFile %s: %v", id, err)
+		jsonOK(w, files)
 		return
 	}
 
+	params := db.ListFilesParams{}
+	if v := q.Get("dir"); v != "" {
+		p := toPrefix(v)
+		params.Prefix = &p
+	}
+	if v := q.Get("tag"); v != "" {
+		params.Tag = &v
+	}
+	if v := q.Get("lang"); v != "" {
+		params.Lang = &v
+	}
+
+	fs, err := h.store.Queries.ListFiles(ctx, params)
+	if err != nil {
+		jsonError(w, "failed to list files", http.StatusInternalServerError)
+		log.Printf("list files: %v", err)
+		return
+	}
+
+	ids := make([]string, len(fs))
+	for i, f := range fs {
+		ids[i] = f.ID
+	}
+
+	var files []types.File
+	tagMap := buildTagMap(ctx, h.store.Queries, ids)
+	for _, f := range fs {
+		files = append(files, types.File{File: f, Tags: tagMap[f.ID]})
+	}
+
+	jsonOK(w, files)
+}
+
+// ── GET /files/{id} ───────────────────────────────────────────────────────────
+// ?meta=true returns JSON metadata instead of the raw blob.
+
+func (h *filesHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{file.ID})
 	if r.URL.Query().Get("meta") == "true" {
-		tags, _ := h.queries.ListTagsForFile(ctx, id)
-		names := make([]string, len(tags))
-		for i, t := range tags {
-			names[i] = t.Name
-		}
-		jsonOK(w, fileToResponse(file, names))
+		jsonOK(w, types.File{File: *file, Tags: m[file.ID]})
 		return
 	}
 
-	blob, err := h.blobs.Read(file.ID)
+	blob, err := h.blobs.Open(file.Sha256)
 	if err != nil {
 		jsonError(w, "blob not found", http.StatusNotFound)
-		log.Printf("ReadBlob %s: %v", id, err)
+		log.Printf("open blob %s: %v", file.ID, err)
 		return
 	}
 	defer blob.Close()
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.FileName))
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-File-Path", file.Path)
 	w.Header().Set("X-File-Name", file.FileName)
-	w.Header().Set("X-File-Language", file.Language)
+	w.Header().Set("X-File-Path", file.Path)
+	w.Header().Set("X-File-SHA256", file.Sha256)
+	w.Header().Set("X-File-Version", strconv.FormatInt(file.Version, 10))
 
 	if _, err := io.Copy(w, blob); err != nil {
-		log.Printf("stream blob %s: %v", id, err)
+		log.Printf("stream blob %s: %v", file.ID, err)
 	}
 }
 
-// handleUploadFile handles POST /files
-func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) {
+// ── POST /files ───────────────────────────────────────────────────────────────
+// Multipart fields: file (required), path, description, language, tags.
+
+func (h *filesHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
@@ -177,133 +139,195 @@ func (h *filesHandler) handleUploadFile(w http.ResponseWriter, r *http.Request) 
 
 	formFile, header, err := r.FormFile("file")
 	if err != nil {
-		jsonError(w, "missing 'file' field in form", http.StatusBadRequest)
+		jsonError(w, "missing 'file' field", http.StatusBadRequest)
 		return
 	}
 	defer formFile.Close()
 
-	m := r.FormValue("metadata")
-
-	var metadata struct {
-		Description string `json:"description,omitempty"`
-		Language    string `json:"language,omitempty"`
-		Tags        string `json:"tags,omitempty"`
+	filePath := r.FormValue("path")
+	if filePath == "" {
+		filePath = header.Filename
 	}
-	if err := json.Unmarshal([]byte(m), &metadata); err != nil {
-		jsonError(w, "invalid metadata JSON", http.StatusBadRequest)
-		return
-	}
-
-	description := metadata.Description
-	language := metadata.Language
+	language := r.FormValue("language")
 	if language == "" {
 		language = detectLanguage(header.Filename)
 	}
 
-	tagNames := strings.Split(metadata.Tags, ",")
-
-	uploadedBy := "unknown"
-	if id, ok := auth.FromContext(ctx); ok {
-		uploadedBy = id.Hostname
+	wr, err := h.blobs.Write(ctx, formFile)
+	if err != nil {
+		jsonError(w, "failed to store file", http.StatusInternalServerError)
+		log.Printf("write blob: %v", err)
+		return
 	}
 
 	fileID := uuid.New().String()
-	size, sha256hex, err := h.blobs.Write(fileID, formFile)
-	if err != nil {
-		jsonError(w, "failed to store file", http.StatusInternalServerError)
-		log.Printf("WriteBlob %s: %v", fileID, err)
-		return
-	}
-
-	fileName := header.Filename
-	file, err := h.queries.CreateFile(ctx, db.CreateFileParams{
+	file, err := h.store.Queries.CreateFile(ctx, db.CreateFileParams{
 		ID:          fileID,
-		Path:        fileName,
-		FileName:    filepath.Base(fileName),
-		Description: description,
+		Path:        filePath,
+		FileName:    filepath.Base(filePath),
+		Description: r.FormValue("description"),
 		Language:    language,
-		Size:        size,
-		BlobPath:    h.blobs.BlobPath(fileID),
-		Sha256:      sha256hex,
-		UploadedBy:  uploadedBy,
+		Size:        wr.Size,
+		Sha256:      wr.SHA256,
+		UploadedBy:  callerHost(ctx),
 	})
 	if err != nil {
-		h.blobs.Delete(fileID)
 		jsonError(w, "failed to save file metadata", http.StatusInternalServerError)
-		log.Printf("CreateFile %s: %v", fileID, err)
+		log.Printf("create file %s: %v", fileID, err)
 		return
 	}
 
-	if err := h.searcher.UpdateContent(ctx, fileID, h.blobs); err != nil {
-		log.Printf("FTS index %s: %v", fileID, err)
+	if err := applyTags(ctx, h.store.Queries, fileID, splitTags(r.FormValue("tags"))); err != nil {
+		log.Printf("apply tags %s: %v", fileID, err)
 	}
 
-	var appliedTags []string
-	if len(tagNames) > 0 {
-		appliedTags = h.applyTags(ctx, fileID, tagNames)
-	}
+	go h.indexContent(fileID, wr.SHA256)
 
-	w.WriteHeader(http.StatusCreated)
-	jsonOK(w, fileToResponse(file, appliedTags))
+	m := buildTagMap(ctx, h.store.Queries, []string{file.ID})
+
+	jsonCreated(w, types.File{File: file, Tags: m[file.ID]})
 }
 
-func (h *filesHandler) handleUpdateFile(w http.ResponseWriter, r *http.Request) {
+// ── PUT /files/{id} ───────────────────────────────────────────────────────────
+// Updates file content. Creates a new version when content has changed.
+// Multipart fields: file (required), message (optional).
+
+func (h *filesHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
 
-	var req db.UpdateFileParams
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-
-	file, err := h.queries.UpdateFile(ctx, req)
+	file, err := h.store.ResolveFile(r.PathValue("id"))
 	if err != nil {
-		jsonError(w, "failed to update file", http.StatusInternalServerError)
-		log.Printf("UpdateFile %s: %v", id, err)
+		jsonError(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	jsonOK(w, fileToResponse(file, []string{}))
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		jsonError(w, "invalid multipart form", http.StatusBadRequest)
+		return
+	}
+
+	formFile, _, err := r.FormFile("file")
+	if err != nil {
+		jsonError(w, "missing 'file' field", http.StatusBadRequest)
+		return
+	}
+	defer formFile.Close()
+
+	result, updated, err := h.verSvc.Update(ctx, version.UpdateParams{
+		FileID:     file.ID,
+		NewContent: formFile,
+		UploadedBy: callerHost(ctx),
+		Message:    r.FormValue("message"),
+	})
+	if err != nil {
+		jsonError(w, "update failed", http.StatusInternalServerError)
+		log.Printf("update file %s: %v", file.ID, err)
+		return
+	}
+
+	if result == version.ResultUpdated {
+		go h.indexContent(file.ID, updated.Sha256)
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{updated.ID})
+
+	jsonOK(w, map[string]any{
+		"result": result.String(),
+		"file":   types.File{File: updated, Tags: m[updated.ID]},
+	})
 }
 
-// handleDeleteFile handles DELETE /files/{id}
-func (h *filesHandler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+// ── PATCH /files/{id} ─────────────────────────────────────────────────────────
+// Edits metadata: description, language, path (rename/move).
+// JSON body fields are all optional — only provided fields are updated.
 
-	file, err := h.queries.GetFile(r.Context(), id)
+func (h *filesHandler) handleEditMeta(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
 	if err != nil {
-		if isNotFound(err) {
-			jsonError(w, "file not found", http.StatusNotFound)
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Description *string `json:"description"`
+		Language    *string `json:"language"`
+		Path        *string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Apply path rename first so UpdateFileMeta sees the right row.
+	if body.Path != nil && *body.Path != file.Path {
+		if _, err := h.store.Queries.MoveFile(ctx, db.MoveFileParams{
+			ID:       file.ID,
+			Path:     *body.Path,
+			FileName: filepath.Base(*body.Path),
+		}); err != nil {
+			jsonError(w, "rename failed", http.StatusInternalServerError)
+			log.Printf("move file %s: %v", file.ID, err)
 			return
 		}
-		jsonError(w, "failed to get file", http.StatusInternalServerError)
+	}
+
+	desc := file.Description
+	if body.Description != nil {
+		desc = *body.Description
+	}
+	lang := file.Language
+	if body.Language != nil {
+		lang = *body.Language
+	}
+
+	updated, err := h.store.Queries.UpdateFileMeta(ctx, db.UpdateFileMetaParams{
+		ID:          file.ID,
+		Description: desc,
+		Language:    lang,
+	})
+	if err != nil {
+		jsonError(w, "meta update failed", http.StatusInternalServerError)
 		return
 	}
+	m := buildTagMap(ctx, h.store.Queries, []string{updated.ID})
 
-	if err := h.queries.DeleteFile(r.Context(), id); err != nil {
-		jsonError(w, "failed to delete file", http.StatusInternalServerError)
-		log.Printf("DeleteFile %s: %v", id, err)
-		return
-	}
-
-	if err := h.blobs.Delete(file.ID); err != nil {
-		log.Printf("DeleteBlob %s: %v", id, err)
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	jsonOK(w, types.File{File: updated, Tags: m[updated.ID]})
 }
 
-// handleAddTags handles POST /files/{id}/tags
+// ── DELETE /files/{id} ────────────────────────────────────────────────────────
+
+func (h *filesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	sha := file.Sha256
+	if err := h.store.Queries.DeleteFile(ctx, file.ID); err != nil {
+		jsonError(w, "delete failed", http.StatusInternalServerError)
+		log.Printf("delete file %s: %v", file.ID, err)
+		return
+	}
+
+	go h.blobs.DeleteIfUnreferenced(ctx, sha)
+	jsonNoContent(w)
+}
+
+// ── POST /files/{id}/tags ─────────────────────────────────────────────────────
+// JSON body: {"tags": ["tag1", "tag2"]}
+
 func (h *filesHandler) handleAddTags(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
 
-	if _, err := h.queries.GetFile(ctx, id); err != nil {
-		if isNotFound(err) {
-			jsonError(w, "file not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to get file", http.StatusInternalServerError)
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -311,60 +335,320 @@ func (h *filesHandler) handleAddTags(w http.ResponseWriter, r *http.Request) {
 		Tags []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		jsonError(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	applied := h.applyTags(ctx, id, body.Tags)
-	jsonOK(w, map[string][]string{"tags": applied})
+	if err := applyTags(ctx, h.store.Queries, file.ID, body.Tags); err != nil {
+		jsonError(w, "failed to apply tags", http.StatusInternalServerError)
+		return
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{file.ID})
+	jsonOK(w, map[string][]string{"tags": m[file.ID]})
 }
 
-// handleRemoveTag handles DELETE /files/{id}/tags/{tag}
+// ── DELETE /files/{id}/tags/{tag} ─────────────────────────────────────────────
+
 func (h *filesHandler) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
-	tagName := r.PathValue("tag")
 
-	tag, err := h.queries.GetTagByName(ctx, tagName)
+	file, err := h.store.ResolveFile(r.PathValue("id"))
 	if err != nil {
-		if isNotFound(err) {
-			jsonError(w, "tag not found", http.StatusNotFound)
-			return
-		}
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	tag, err := h.store.Queries.GetTagByName(ctx, r.PathValue("tag"))
+	if isNotFound(err) {
+		jsonError(w, "tag not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
 		jsonError(w, "failed to get tag", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.queries.RemoveTagFromFile(ctx, db.RemoveTagFromFileParams{
-		FileID: id,
+	h.store.Queries.RemoveTagFromFile(ctx, db.RemoveTagFromFileParams{
+		FileID: file.ID,
 		TagID:  tag.ID,
-	}); err != nil {
-		jsonError(w, "failed to remove tag", http.StatusInternalServerError)
-		log.Printf("RemoveTag %s from %s: %v", tagName, id, err)
+	})
+	jsonNoContent(w)
+}
+
+// ── POST /files/{id}/copy ─────────────────────────────────────────────────────
+// Creates a new file record pointing at the same blob — no disk copy.
+// JSON body: {"path": "new/path.sh"}
+
+func (h *filesHandler) handleCopy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	src, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
+		jsonError(w, "JSON body with 'path' is required", http.StatusBadRequest)
+		return
+	}
+
+	newFile, err := h.store.Queries.CreateFile(ctx, db.CreateFileParams{
+		ID:          uuid.New().String(),
+		Path:        body.Path,
+		FileName:    filepath.Base(body.Path),
+		Description: src.Description,
+		Language:    src.Language,
+		Size:        src.Size,
+		Sha256:      src.Sha256, // same blob — ref count bumped by trigger
+		UploadedBy:  callerHost(ctx),
+	})
+	if err != nil {
+		jsonError(w, "copy failed", http.StatusInternalServerError)
+		log.Printf("copy file %s -> %s: %v", src.ID, body.Path, err)
+		return
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{newFile.ID})
+	jsonCreated(w, types.File{File: newFile, Tags: m[newFile.ID]})
 }
 
-func (h *filesHandler) applyTags(ctx context.Context, fileID string, names []string) []string {
-	var applied []string
-	for _, name := range names {
-		tag, err := h.queries.CreateTag(ctx, name)
-		if err != nil {
-			log.Printf("CreateTag %q: %v", name, err)
-			continue
-		}
-		if err := h.queries.AddTagToFile(ctx, db.AddTagToFileParams{
-			FileID: fileID,
-			TagID:  tag.ID,
-		}); err != nil {
-			log.Printf("AddTagToFile %s → %s: %v", name, fileID, err)
-			continue
-		}
-		applied = append(applied, name)
+// ── POST /files/{id}/move ─────────────────────────────────────────────────────
+// JSON body: {"path": "new/path.sh"}
+
+func (h *filesHandler) handleMove(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
 	}
-	return applied
+
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
+		jsonError(w, "JSON body with 'path' is required", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.store.Queries.MoveFile(ctx, db.MoveFileParams{
+		ID:       file.ID,
+		Path:     body.Path,
+		FileName: filepath.Base(body.Path),
+	})
+	if err != nil {
+		jsonError(w, "move failed", http.StatusInternalServerError)
+		log.Printf("move file %s: %v", file.ID, err)
+		return
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{updated.ID})
+	jsonOK(w, types.File{File: updated, Tags: m[updated.ID]})
+}
+
+// ── GET /files/{id}/versions ──────────────────────────────────────────────────
+
+func (h *filesHandler) handleListVersions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	versions, err := h.store.Queries.ListVersions(ctx, db.ListVersionsParams{
+		FileID: &file.ID,
+	})
+	if err != nil {
+		jsonError(w, "failed to list versions", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, versions)
+}
+
+// GET /files/{id}/versions/{n}
+func (h *filesHandler) handleGetVersion(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	n, err := strconv.ParseInt(r.PathValue("n"), 10, 64)
+	if err != nil {
+		jsonError(w, "invalid version number", http.StatusBadRequest)
+		return
+	}
+
+	versions, err := h.store.Queries.ListVersions(ctx, db.ListVersionsParams{
+		FileID: &file.ID,
+	})
+	if err != nil {
+		jsonError(w, "failed to list versions", http.StatusInternalServerError)
+		return
+	}
+
+	if len(versions) == 0 {
+		jsonError(w, "no versions found", http.StatusNotFound)
+		return
+	}
+
+	var version db.Version
+	for _, v := range versions {
+		if v.Version == n {
+			version = v
+			break
+		}
+	}
+
+	blob, err := h.blobs.Open(version.Sha256)
+	if err != nil {
+		jsonError(w, "blob not found", http.StatusNotFound)
+		log.Printf("open blob %s: %v", file.ID, err)
+		return
+	}
+	defer blob.Close()
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.FileName))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-File-Name", file.FileName)
+	w.Header().Set("X-File-Path", file.Path)
+	w.Header().Set("X-File-SHA256", version.Sha256)
+	w.Header().Set("X-File-Version", strconv.FormatInt(version.Version, 10))
+
+	if _, err := io.Copy(w, blob); err != nil {
+		log.Printf("stream blob %s: %v", file.ID, err)
+	}
+
+}
+
+// ── POST /files/{id}/versions/{n}/rollback ───────────────────────────────────
+
+func (h *filesHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	n, err := strconv.ParseInt(r.PathValue("n"), 10, 64)
+	if err != nil {
+		jsonError(w, "invalid version number", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.verSvc.Rollback(ctx, file.ID, n, callerHost(ctx))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	m := buildTagMap(ctx, h.store.Queries, []string{updated.ID})
+	jsonOK(w, types.File{File: updated, Tags: m[updated.ID]})
+}
+
+// ── GET /files/{id}/diff ──────────────────────────────────────────────────────
+// Returns a metadata diff between two versions.
+// Query params: ?a=<n>&b=<m> (defaults: a=current, b=previous)
+
+func (h *filesHandler) handleDiff(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	file, err := h.store.ResolveFile(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	versions, err := h.store.Queries.ListVersions(ctx, db.ListVersionsParams{
+		FileID: &file.ID,
+	})
+	if err != nil || len(versions) == 0 {
+		jsonOK(w, map[string]any{"message": "no version history"})
+		return
+	}
+
+	// Build lookup: version_number → db.Version.
+	// Also include current file state as a pseudo-version.
+	byNum := make(map[int64]db.Version, len(versions)+1)
+	for _, v := range versions {
+		byNum[v.Version] = v
+	}
+	byNum[file.Version] = db.Version{
+		FileID:     file.ID,
+		Version:    file.Version,
+		Sha256:     file.Sha256,
+		Size:       file.Size,
+		UploadedBy: file.UploadedBy,
+		CreatedAt:  file.UpdatedAt,
+		Message:    "(current)",
+	}
+
+	parseVer := func(s string, def int64) (db.Version, bool) {
+		if s == "" {
+			v, ok := byNum[def]
+			return v, ok
+		}
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return db.Version{}, false
+		}
+		v, ok := byNum[n]
+		return v, ok
+	}
+
+	vA, okA := parseVer(r.URL.Query().Get("a"), file.Version)
+	vB, okB := parseVer(r.URL.Query().Get("b"), versions[0].Version)
+	if !okA || !okB {
+		jsonError(w, "version not found", http.StatusNotFound)
+		return
+	}
+
+	jsonOK(w, map[string]any{
+		"file": map[string]string{"id": file.ID, "path": file.Path},
+		"a":    vA,
+		"b":    vB,
+		"changed": map[string]any{
+			"sha256":     vA.Sha256 != vB.Sha256,
+			"size_delta": vA.Size - vB.Size,
+		},
+	})
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+func (h *filesHandler) indexContent(fileID, sha256hex string) {
+	rc, err := h.blobs.Open(sha256hex)
+	if err != nil {
+		log.Printf("index: open blob %s: %v", fileID, err)
+		return
+	}
+	defer rc.Close()
+	content, err := io.ReadAll(rc)
+	if err != nil {
+		log.Printf("index: read blob %s: %v", fileID, err)
+		return
+	}
+	_ = h.searcher.IndexFileContent(context.Background(), fileID, string(content))
+}
+
+func callerHost(ctx context.Context) string {
+	if id, ok := auth.FromContext(ctx); ok {
+		return id.Hostname
+	}
+	return "unknown"
 }
 
 func detectLanguage(filename string) string {
@@ -394,8 +678,12 @@ func detectLanguage(filename string) string {
 		return "ini"
 	case ".md":
 		return "markdown"
+	case ".rs":
+		return "rust"
+	case ".rb":
+		return "ruby"
 	default:
-		if strings.EqualFold(filename, "Dockerfile") {
+		if strings.EqualFold(filepath.Base(filename), "Dockerfile") {
 			return "dockerfile"
 		}
 		return "text"
@@ -404,4 +692,17 @@ func detectLanguage(filename string) string {
 
 func isNotFound(err error) bool {
 	return err != nil && (errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no rows"))
+}
+
+func splitTags(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, t := range strings.Split(raw, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

@@ -4,114 +4,121 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/wf-pro-dev/devbox/internal/auth"
 	"github.com/wf-pro-dev/devbox/internal/db"
-	"github.com/wf-pro-dev/devbox/internal/search"
 	"github.com/wf-pro-dev/devbox/internal/storage"
-	"github.com/wf-pro-dev/devbox/internal/transfer"
-	"tailscale.com/client/local"
+	"github.com/wf-pro-dev/devbox/internal/version"
+	"github.com/wf-pro-dev/devbox/types"
 )
 
-type dirHandler struct {
-	queries  *db.Queries
-	blobs    *storage.BlobStore
-	searcher *search.Searcher
-	lc       *local.Client
+type dirsHandler struct {
+	store  *storage.Store
+	blobs  *storage.BlobStore
+	verSvc *version.Service
 }
 
-type dirResponse struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Prefix      string         `json:"prefix"`
-	Description string         `json:"description"`
-	UploadedBy  string         `json:"uploaded_by"`
-	CreatedAt   string         `json:"created_at"`
-	FileCount   int            `json:"file_count"`
-	Files       []fileResponse `json:"files,omitempty"`
+// toPrefix normalises a directory name to a trailing-slash prefix.
+// e.g. "nginx" → "nginx/",  "nginx/" → "nginx/"
+func toPrefix(name string) string {
+	name = strings.Trim(name, "/")
+	if name == "" {
+		return ""
+	}
+	return name + "/"
 }
 
-// ── GET /directories ──────────────────────────────────────────────────────────
+// listDirFiles returns all files under prefix using ListFiles.
+func (h *dirsHandler) listDirFiles(ctx interface{ Deadline() (interface{}, bool) }, prefix string) ([]db.File, error) {
+	// ctx is context.Context — typed inline to avoid a separate import alias
+	return nil, nil // placeholder — real implementation below uses the correct type
+}
 
-func (h *dirHandler) handleListDirs(w http.ResponseWriter, r *http.Request) {
+// ── GET /dirs ─────────────────────────────────────────────────────────────────
+// Returns all distinct top-level directory names with file count and tags.
+// Optional ?tag= filter narrows to dirs that contain at least one file with
+// that tag.
+
+func (h *dirsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	dirs, err := h.queries.ListDirectories(ctx)
+
+	params := db.ListFilesParams{}
+	if tag := r.URL.Query().Get("tag"); tag != "" {
+		params.Tag = &tag
+	}
+
+	files, err := h.store.Queries.ListFiles(ctx, params)
 	if err != nil {
-		jsonError(w, "failed to list directories", http.StatusInternalServerError)
+		jsonError(w, "failed to list files", http.StatusInternalServerError)
+		log.Printf("dirs list: %v", err)
 		return
 	}
 
-	resp := make([]dirResponse, len(dirs))
-	for i, d := range dirs {
-		files, _ := h.queries.ListFilesByDir(ctx, storage.NullText(d.ID))
-		resp[i] = dirResponse{
-			ID:          d.ID,
-			Name:        d.Name,
-			Prefix:      d.Prefix,
-			Description: d.Description,
-			UploadedBy:  d.UploadedBy,
-			CreatedAt:   d.CreatedAt,
-			FileCount:   len(files),
-		}
+	// Derive distinct top-level dir names from the file set.
+	// A file is "in a dir" if its path contains a slash.
+	type dirEntry struct {
+		files []db.File
 	}
+	dirMap := make(map[string]*dirEntry)
+	for _, f := range files {
+		idx := strings.Index(f.Path, "/")
+		if idx <= 0 {
+			continue // root-level file, not in any dir
+		}
+		name := f.Path[:idx]
+		if dirMap[name] == nil {
+			dirMap[name] = &dirEntry{}
+		}
+		dirMap[name].files = append(dirMap[name].files, f)
+	}
+
+	resp := make([]types.Directory, 0, len(dirMap))
+	for name, entry := range dirMap {
+		prefix := name + "/"
+		resp = append(resp, types.Directory{Prefix: prefix, FileCount: len(entry.files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: entry.files})
+	}
+
 	jsonOK(w, resp)
 }
 
-// ── GET /directories/{id} ─────────────────────────────────────────────────────
+// ── GET /dirs/{dir} ───────────────────────────────────────────────────────────
+// Returns dir metadata + full file list.
 
-func (h *dirHandler) handleGetDir(w http.ResponseWriter, r *http.Request) {
+func (h *dirsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
-
-	dir, err := h.queries.GetDirectory(ctx, id)
+	dirName, err := url.PathUnescape(r.PathValue("dir"))
 	if err != nil {
-		if isNotFound(err) {
-			jsonError(w, "directory not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to get directory", http.StatusInternalServerError)
+		jsonError(w, "invalid directory path", http.StatusBadRequest)
+		return
+	}
+	prefix := toPrefix(dirName)
+
+	files, err := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	if err != nil {
+		jsonError(w, "failed to list files", http.StatusInternalServerError)
+		return
+	}
+	if len(files) == 0 {
+		jsonError(w, "directory not found", http.StatusNotFound)
 		return
 	}
 
-	files, err := h.queries.ListFilesByDir(ctx, storage.NullText(id))
-	if err != nil {
-		jsonError(w, "failed to list directory files", http.StatusInternalServerError)
-		return
-	}
-
-	fileResps := make([]fileResponse, len(files))
-	for i, f := range files {
-		tags, _ := h.queries.ListTagsForFile(ctx, f.ID)
-		names := make([]string, len(tags))
-		for j, t := range tags {
-			names[j] = t.Name
-		}
-		fileResps[i] = fileToResponse(f, names)
-	}
-
-	jsonOK(w, dirResponse{
-		ID:          dir.ID,
-		Name:        dir.Name,
-		Prefix:      dir.Prefix,
-		Description: dir.Description,
-		UploadedBy:  dir.UploadedBy,
-		CreatedAt:   dir.CreatedAt,
-		Files:       fileResps,
-		FileCount:   len(files),
-	})
+	jsonOK(w, types.Directory{Prefix: prefix, FileCount: len(files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: files})
 }
 
-// ── POST /directories ─────────────────────────────────────────────────────────
+// ── POST /dirs ────────────────────────────────────────────────────────────────
+// Uploads a set of files under a common prefix, creating the virtual dir.
 // Multipart fields:
-//   dir_name    — directory label (required)
-//   description — optional
-//   file        — repeated, one per file
-//   path[]      — repeated, relative path for each file (same order as file[])
+//
+//	name    — directory name / prefix root (required)
+//	tags    — comma-separated tags applied to every uploaded file (optional)
+//	file    — repeated, one per file
+//	path[]  — repeated, relative path per file (same order as file[])
 
-func (h *dirHandler) handleUploadDir(w http.ResponseWriter, r *http.Request) {
+func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	r.Body = http.MaxBytesReader(w, r.Body, 500<<20)
 
@@ -120,122 +127,213 @@ func (h *dirHandler) handleUploadDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dirName := strings.TrimSpace(r.FormValue("dir_name"))
-	if dirName == "" {
-		jsonError(w, "dir_name is required", http.StatusBadRequest)
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		jsonError(w, "'name' is required", http.StatusBadRequest)
 		return
 	}
+	prefix := toPrefix(name)
+	tagNames := splitTags(r.FormValue("tags"))
+	uploadedBy := callerHost(ctx)
 
-	description := r.FormValue("description")
-
-	uploadedBy := "unknown"
-	if id, ok := auth.FromContext(ctx); ok {
-		uploadedBy = id.Hostname
-	}
-
-	paths := r.MultipartForm.Value["path[]"]
+	relPaths := r.MultipartForm.Value["path[]"]
 	formFiles := r.MultipartForm.File["file"]
-	if len(formFiles) == 0 {
-		jsonError(w, "no files provided", http.StatusBadRequest)
-		return
-	}
 
-	dirID := uuid.New().String()
-	prefix := dirName + "/"
-	dir, err := h.queries.CreateDirectory(ctx, db.CreateDirectoryParams{
-		ID:          dirID,
-		Name:        dirName,
-		Prefix:      prefix,
-		Description: description,
-		UploadedBy:  uploadedBy,
-	})
-	if err != nil {
-		jsonError(w, "failed to create directory", http.StatusInternalServerError)
-		log.Printf("CreateDirectory: %v", err)
-		return
-	}
+	var created []db.File
 
-	var uploaded []fileResponse
 	for i, fh := range formFiles {
 		relPath := fh.Filename
-		if i < len(paths) && paths[i] != "" {
-			relPath = paths[i]
+		if i < len(relPaths) && relPaths[i] != "" {
+			relPath = relPaths[i]
 		}
 		relPath = filepath.ToSlash(filepath.Clean(relPath))
-
-		fileName := filepath.Base(relPath)
-		subDir := filepath.Dir(relPath)
-		dirPrefix := ""
-		if subDir != "." {
-			dirPrefix = subDir + "/"
-		}
 		fullPath := prefix + relPath
 
 		f, err := fh.Open()
 		if err != nil {
-			log.Printf("open form file %s: %v", relPath, err)
+			log.Printf("dirs create: open %s: %v", relPath, err)
+			continue
+		}
+
+		wr, err := h.blobs.Write(ctx, f)
+		f.Close()
+		if err != nil {
+			log.Printf("dirs create: write blob %s: %v", relPath, err)
 			continue
 		}
 
 		fileID := uuid.New().String()
-		size, sha256hex, err := h.blobs.Write(fileID, f)
-		f.Close()
-		if err != nil {
-			log.Printf("write blob %s: %v", relPath, err)
-			continue
-		}
-
-		dbFile, err := h.queries.CreateFile(ctx, db.CreateFileParams{
-			ID:          fileID,
-			Path:        fullPath,
-			FileName:    fileName,
-			DirID:       storage.NullText(dirID),
-			DirPrefix:   dirPrefix,
-			Description: "",
-			Language:    detectLanguage(fileName),
-			Size:        size,
-			BlobPath:    h.blobs.BlobPath(fileID),
-			Sha256:      sha256hex,
-			UploadedBy:  uploadedBy,
+		dbFile, err := h.store.Queries.CreateFile(ctx, db.CreateFileParams{
+			ID:         fileID,
+			Path:       fullPath,
+			FileName:   filepath.Base(relPath),
+			Language:   detectLanguage(fh.Filename),
+			Size:       wr.Size,
+			Sha256:     wr.SHA256,
+			UploadedBy: uploadedBy,
 		})
 		if err != nil {
-			log.Printf("CreateFile %s: %v", fullPath, err)
-			h.blobs.Delete(fileID)
+			log.Printf("dirs create: insert %s: %v", fullPath, err)
 			continue
 		}
 
-		if err := h.searcher.UpdateContent(ctx, fileID, h.blobs); err != nil {
-			log.Printf("FTS index %s: %v", fileID, err)
+		if err := applyTags(ctx, h.store.Queries, fileID, tagNames); err != nil {
+			log.Printf("dirs create: apply tags %s: %v", fileID, err)
 		}
 
-		uploaded = append(uploaded, fileToResponse(dbFile, []string{}))
+		created = append(created, dbFile)
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	jsonOK(w, dirResponse{
-		ID:          dir.ID,
-		Name:        dir.Name,
-		Prefix:      dir.Prefix,
-		Description: dir.Description,
-		UploadedBy:  dir.UploadedBy,
-		CreatedAt:   dir.CreatedAt,
-		Files:       uploaded,
-		FileCount:   len(uploaded),
+	jsonCreated(w, types.Directory{Prefix: prefix, FileCount: len(created), Tags: tagNames, Files: created})
+}
+
+// ── PUT /dirs/{dir} ───────────────────────────────────────────────────────────
+// Syncs a local directory to the server prefix.
+//   - Existing file, content changed → new version via version.Service
+//   - Existing file, content same   → unchanged
+//   - New file                      → created
+
+func (h *dirsHandler) handleSync(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	dirName, err := url.PathUnescape(r.PathValue("dir"))
+	if err != nil {
+		jsonError(w, "invalid directory path", http.StatusBadRequest)
+		return
+	}
+	prefix := toPrefix(dirName)
+
+	r.Body = http.MaxBytesReader(w, r.Body, 500<<20)
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		jsonError(w, "invalid multipart form", http.StatusBadRequest)
+		return
+	}
+
+	message := r.FormValue("message")
+	uploadedBy := callerHost(ctx)
+	relPaths := r.MultipartForm.Value["path[]"]
+	formFiles := r.MultipartForm.File["file"]
+
+	// Index existing files under the prefix by their full path.
+	existing, _ := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	byPath := make(map[string]db.File, len(existing))
+	for _, f := range existing {
+		byPath[f.Path] = f
+	}
+
+	var updated, added, unchanged []string
+
+	for i, fh := range formFiles {
+		relPath := fh.Filename
+		if i < len(relPaths) && relPaths[i] != "" {
+			relPath = relPaths[i]
+		}
+		relPath = filepath.ToSlash(filepath.Clean(relPath))
+		fullPath := prefix + relPath
+
+		f, err := fh.Open()
+		if err != nil {
+			log.Printf("dirs sync: open %s: %v", relPath, err)
+			continue
+		}
+
+		if existing, exists := byPath[fullPath]; exists {
+			result, _, err := h.verSvc.Update(ctx, version.UpdateParams{
+				FileID:     existing.ID,
+				NewContent: f,
+				UploadedBy: uploadedBy,
+				Message:    message,
+			})
+			f.Close()
+			if err != nil {
+				log.Printf("dirs sync: update %s: %v", fullPath, err)
+				continue
+			}
+			if result == version.ResultUpdated {
+				updated = append(updated, relPath)
+			} else {
+				unchanged = append(unchanged, relPath)
+			}
+		} else {
+			wr, err := h.blobs.Write(ctx, f)
+			f.Close()
+			if err != nil {
+				log.Printf("dirs sync: write blob %s: %v", relPath, err)
+				continue
+			}
+			fileID := uuid.New().String()
+			_, err = h.store.Queries.CreateFile(ctx, db.CreateFileParams{
+				ID:         fileID,
+				Path:       fullPath,
+				FileName:   filepath.Base(relPath),
+				Language:   detectLanguage(fh.Filename),
+				Size:       wr.Size,
+				Sha256:     wr.SHA256,
+				UploadedBy: uploadedBy,
+			})
+			if err != nil {
+				log.Printf("dirs sync: create %s: %v", fullPath, err)
+				continue
+			}
+			added = append(added, relPath)
+		}
+	}
+
+	jsonOK(w, map[string]any{
+		"prefix":    prefix,
+		"updated":   orEmpty(updated),
+		"added":     orEmpty(added),
+		"unchanged": orEmpty(unchanged),
 	})
 }
 
-// ── POST /directories/{id}/tags ───────────────────────────────────────────────
+// ── DELETE /dirs/{dir} ────────────────────────────────────────────────────────
+// Deletes all files under the prefix, then cleans up orphaned blobs.
 
-func (h *dirHandler) handleTagDir(w http.ResponseWriter, r *http.Request) {
+func (h *dirsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	dirName, err := url.PathUnescape(r.PathValue("dir"))
+	if err != nil {
+		jsonError(w, "invalid directory path", http.StatusBadRequest)
+		return
+	}
+	prefix := toPrefix(dirName)
 
-	if _, err := h.queries.GetDirectory(ctx, id); err != nil {
-		if isNotFound(err) {
-			jsonError(w, "directory not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to get directory", http.StatusInternalServerError)
+	files, _ := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	if len(files) == 0 {
+		jsonError(w, "directory not found", http.StatusNotFound)
+		return
+	}
+
+	shas := make([]string, len(files))
+	for i, f := range files {
+		shas[i] = f.Sha256
+	}
+
+	if err := h.store.Queries.DeleteFilesByPrefix(ctx, &prefix); err != nil {
+		jsonError(w, "delete failed", http.StatusInternalServerError)
+		log.Printf("delete dir %s: %v", prefix, err)
+		return
+	}
+
+	for _, sha := range shas {
+		go h.blobs.DeleteIfUnreferenced(ctx, sha)
+	}
+
+	jsonNoContent(w)
+}
+
+// ── POST /dirs/{dir}/tags ─────────────────────────────────────────────────────
+// Adds tags to every file under the prefix in two queries: UpsertTag + bulk insert.
+// JSON body: {"tags": ["tag1", "tag2"]}
+
+func (h *dirsHandler) handleAddTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	prefix := toPrefix(r.PathValue("dir"))
+
+	// Verify the dir exists.
+	files, _ := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	if len(files) == 0 {
+		jsonError(w, "directory not found", http.StatusNotFound)
 		return
 	}
 
@@ -243,139 +341,116 @@ func (h *dirHandler) handleTagDir(w http.ResponseWriter, r *http.Request) {
 		Tags []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		jsonError(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	fileIDs, err := h.queries.ListFileIDsForDir(ctx, storage.NullText(id))
-	if err != nil {
-		jsonError(w, "failed to list directory files", http.StatusInternalServerError)
-		return
-	}
-
-	// Upsert tags once, then apply to all files.
-	var tagIDs []int64
 	for _, name := range body.Tags {
-		tag, err := h.queries.CreateTag(ctx, name)
-		if err != nil {
-			log.Printf("CreateTag %q: %v", name, err)
+		name = strings.TrimSpace(name)
+		if name == "" {
 			continue
 		}
-		tagIDs = append(tagIDs, tag.ID)
-	}
-
-	for _, fileID := range fileIDs {
-		for _, tagID := range tagIDs {
-			if err := h.queries.AddTagToFile(ctx, db.AddTagToFileParams{FileID: fileID, TagID: tagID}); err != nil {
-				log.Printf("AddTagToFile %s: %v", fileID, err)
-			}
-		}
-	}
-
-	jsonOK(w, map[string]interface{}{
-		"tagged_files": len(fileIDs),
-		"tags":         body.Tags,
-	})
-}
-
-// ── POST /directories/{id}/deliver ───────────────────────────────────────────
-
-func (h *dirHandler) handleDeliverDir(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := r.PathValue("id")
-
-	dir, err := h.queries.GetDirectory(ctx, id)
-	if err != nil {
-		if isNotFound(err) {
-			jsonError(w, "directory not found", http.StatusNotFound)
+		tag, err := h.store.Queries.UpsertTag(ctx, name)
+		if err != nil {
+			jsonError(w, "failed to upsert tag", http.StatusInternalServerError)
 			return
 		}
-		jsonError(w, "failed to get directory", http.StatusInternalServerError)
+		if err := h.store.Queries.AddTagToFilesByPrefix(ctx, db.AddTagToFilesByPrefixParams{
+			TagID:   tag.ID,
+			Column2: &prefix,
+		}); err != nil {
+			jsonError(w, "failed to apply tag", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	jsonOK(w, map[string][]string{"tags": prefixTags(ctx, h.store.Queries, prefix)})
+}
+
+// ── DELETE /dirs/{dir}/tags/{tag} ─────────────────────────────────────────────
+// Removes a tag from every file under the prefix.
+
+func (h *dirsHandler) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	dirName, err := url.PathUnescape(r.PathValue("dir"))
+	if err != nil {
+		jsonError(w, "invalid directory path", http.StatusBadRequest)
+		return
+	}
+	prefix := toPrefix(dirName)
+
+	tag, err := h.store.Queries.GetTagByName(ctx, r.PathValue("tag"))
+	if isNotFound(err) {
+		jsonError(w, "tag not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		jsonError(w, "failed to get tag", http.StatusInternalServerError)
 		return
 	}
 
-	var req struct {
-		Targets   []string `json:"targets"`
-		Broadcast bool     `json:"broadcast"`
-		DestDir   string   `json:"dest_dir"`
+	h.store.Queries.RemoveTagFromFilesByPrefix(ctx, db.RemoveTagFromFilesByPrefixParams{
+		TagID:   tag.ID,
+		Column2: &prefix,
+	})
+
+	jsonNoContent(w)
+}
+
+// ── GET /dirs/{dir}/diff ──────────────────────────────────────────────────────
+// Compares the server's state of a prefix to a submitted local manifest.
+// Body: JSON array of {path, sha256} where path is relative to the prefix root.
+// Returns which files are added/changed/removed vs. the server.
+
+func (h *dirsHandler) handleDiff(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	dirName, err := url.PathUnescape(r.PathValue("dir"))
+	if err != nil {
+		jsonError(w, "invalid directory path", http.StatusBadRequest)
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	prefix := toPrefix(dirName)
+
+	var localFiles []struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&localFiles); err != nil {
 		jsonError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	if req.DestDir == "" {
-		req.DestDir = "~/devbox-received/" + dir.Name
+
+	serverFiles, _ := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	serverByRel := make(map[string]db.File, len(serverFiles))
+	for _, f := range serverFiles {
+		rel := strings.TrimPrefix(f.Path, prefix)
+		serverByRel[rel] = f
 	}
 
-	targets := req.Targets
-	if req.Broadcast {
-		status, err := h.lc.Status(ctx)
-		if err != nil {
-			jsonError(w, "failed to list peers", http.StatusInternalServerError)
-			return
+	localByRel := make(map[string]string, len(localFiles))
+	for _, lf := range localFiles {
+		localByRel[lf.Path] = lf.SHA256
+	}
+
+	var changed, added, removed []string
+	for _, lf := range localFiles {
+		sf, exists := serverByRel[lf.Path]
+		if !exists {
+			added = append(added, lf.Path)
+		} else if sf.Sha256 != lf.SHA256 {
+			changed = append(changed, lf.Path)
 		}
-		for _, p := range status.Peer {
-			if !p.Online {
-				continue
-			}
-			dns := strings.TrimSuffix(p.DNSName, ".")
-			if parts := strings.SplitN(dns, ".", 2); len(parts) > 0 {
-				targets = append(targets, parts[0])
-			}
-		}
 	}
-
-	files, err := h.queries.ListFilesByDir(ctx, storage.NullText(id))
-	if err != nil {
-		jsonError(w, "failed to list directory files", http.StatusInternalServerError)
-		return
-	}
-
-	type fileResult struct {
-		Path    string            `json:"path"`
-		Results []transfer.Result `json:"results"`
-	}
-
-	var allResults []fileResult
-	for _, f := range files {
-		destDir := req.DestDir
-		if f.DirPrefix != "" {
-			destDir = req.DestDir + "/" + strings.TrimSuffix(f.DirPrefix, "/")
-		}
-		results := transfer.Deliver(ctx, h.lc, transfer.Delivery{
-			FileID:   f.ID,
-			FileName: f.FileName,
-			BlobPath: h.blobs.BlobPath(f.ID),
-			Targets:  targets,
-			DestDir:  destDir,
-		})
-		allResults = append(allResults, fileResult{Path: f.Path, Results: results})
-	}
-
-	jsonOK(w, allResults)
-}
-
-// ── DELETE /directories/{id} ──────────────────────────────────────────────────
-
-func (h *dirHandler) handleDeleteDir(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := r.PathValue("id")
-
-	files, _ := h.queries.ListFilesByDir(ctx, storage.NullText(id))
-	for _, f := range files {
-		if err := h.blobs.Delete(f.ID); err != nil {
-			log.Printf("delete blob %s: %v", f.ID, err)
+	for rel := range serverByRel {
+		if _, exists := localByRel[rel]; !exists {
+			removed = append(removed, rel)
 		}
 	}
 
-	if err := h.queries.DeleteDirectory(ctx, id); err != nil {
-		if isNotFound(err) {
-			jsonError(w, "directory not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to delete directory", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	jsonOK(w, map[string]any{
+		"prefix":  prefix,
+		"changed": orEmpty(changed),
+		"added":   orEmpty(added),
+		"removed": orEmpty(removed),
+	})
 }

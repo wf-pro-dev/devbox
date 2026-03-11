@@ -7,12 +7,12 @@ package db
 
 import (
 	"context"
+	"strings"
 )
 
 const addTagToFile = `-- name: AddTagToFile :exec
-INSERT INTO file_tags (file_id, tag_id)
+INSERT OR IGNORE INTO file_tags (file_id, tag_id)
 VALUES (?, ?)
-ON CONFLICT DO NOTHING
 `
 
 type AddTagToFileParams struct {
@@ -25,18 +25,19 @@ func (q *Queries) AddTagToFile(ctx context.Context, arg AddTagToFileParams) erro
 	return err
 }
 
-const createTag = `-- name: CreateTag :one
-INSERT INTO tags (name)
-VALUES (?)
-ON CONFLICT(name) DO UPDATE SET name = excluded.name
-RETURNING id, name
+const addTagToFilesByPrefix = `-- name: AddTagToFilesByPrefix :exec
+INSERT OR IGNORE INTO file_tags (file_id, tag_id)
+SELECT f.id, ? FROM files f WHERE f.path LIKE ? || '%'
 `
 
-func (q *Queries) CreateTag(ctx context.Context, name string) (Tag, error) {
-	row := q.db.QueryRowContext(ctx, createTag, name)
-	var i Tag
-	err := row.Scan(&i.ID, &i.Name)
-	return i, err
+type AddTagToFilesByPrefixParams struct {
+	TagID   int64   `json:"tag_id"`
+	Column2 *string `json:"column_2"`
+}
+
+func (q *Queries) AddTagToFilesByPrefix(ctx context.Context, arg AddTagToFilesByPrefixParams) error {
+	_, err := q.db.ExecContext(ctx, addTagToFilesByPrefix, arg.TagID, arg.Column2)
+	return err
 }
 
 const getTagByName = `-- name: GetTagByName :one
@@ -50,39 +51,20 @@ func (q *Queries) GetTagByName(ctx context.Context, name string) (Tag, error) {
 	return i, err
 }
 
-const listFilesForTag = `-- name: ListFilesForTag :many
-SELECT f.id, f.path, f.file_name, f.dir_id, f.dir_prefix, f.description, f.language, f.size, f.blob_path, f.sha256, f.uploaded_by, f.version, f.created_at, f.updated_at FROM files f
-JOIN file_tags ft ON ft.file_id = f.id
-JOIN tags t ON t.id = ft.tag_id
-WHERE t.name = ?
-ORDER BY f.created_at DESC
+const listAllTags = `-- name: ListAllTags :many
+SELECT id, name FROM tags ORDER BY name ASC
 `
 
-func (q *Queries) ListFilesForTag(ctx context.Context, name string) ([]File, error) {
-	rows, err := q.db.QueryContext(ctx, listFilesForTag, name)
+func (q *Queries) ListAllTags(ctx context.Context) ([]Tag, error) {
+	rows, err := q.db.QueryContext(ctx, listAllTags)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []File{}
+	items := []Tag{}
 	for rows.Next() {
-		var i File
-		if err := rows.Scan(
-			&i.ID,
-			&i.Path,
-			&i.FileName,
-			&i.DirID,
-			&i.DirPrefix,
-			&i.Description,
-			&i.Language,
-			&i.Size,
-			&i.BlobPath,
-			&i.Sha256,
-			&i.UploadedBy,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		var i Tag
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -96,23 +78,43 @@ func (q *Queries) ListFilesForTag(ctx context.Context, name string) ([]File, err
 	return items, nil
 }
 
-const listTagsForFile = `-- name: ListTagsForFile :many
-SELECT t.id, t.name FROM tags t
+const listTagsForFiles = `-- name: ListTagsForFiles :many
+SELECT ft.file_id, t.id, t.name
+FROM tags t
 JOIN file_tags ft ON ft.tag_id = t.id
-WHERE ft.file_id = ?
-ORDER BY t.name
+WHERE ft.file_id IN (/*SLICE:ids*/?)
+ORDER BY ft.file_id, t.name ASC
 `
 
-func (q *Queries) ListTagsForFile(ctx context.Context, fileID string) ([]Tag, error) {
-	rows, err := q.db.QueryContext(ctx, listTagsForFile, fileID)
+type ListTagsForFilesRow struct {
+	FileID string `json:"file_id"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+}
+
+// ListTagsForFiles returns tags for one or more files in a single query.
+// Returns (file_id, tag id, tag name) so the caller can group by file_id.
+// Pass a slice with a single element to query tags for one file.
+func (q *Queries) ListTagsForFiles(ctx context.Context, ids []string) ([]ListTagsForFilesRow, error) {
+	query := listTagsForFiles
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Tag{}
+	items := []ListTagsForFilesRow{}
 	for rows.Next() {
-		var i Tag
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		var i ListTagsForFilesRow
+		if err := rows.Scan(&i.FileID, &i.ID, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -135,6 +137,16 @@ func (q *Queries) RemoveAllTagsFromFile(ctx context.Context, fileID string) erro
 	return err
 }
 
+const removeAllTagsFromFilesByPrefix = `-- name: RemoveAllTagsFromFilesByPrefix :exec
+DELETE FROM file_tags
+WHERE file_id IN (SELECT id FROM files WHERE path LIKE ? || '%')
+`
+
+func (q *Queries) RemoveAllTagsFromFilesByPrefix(ctx context.Context, dollar_1 *string) error {
+	_, err := q.db.ExecContext(ctx, removeAllTagsFromFilesByPrefix, dollar_1)
+	return err
+}
+
 const removeTagFromFile = `-- name: RemoveTagFromFile :exec
 DELETE FROM file_tags
 WHERE file_id = ? AND tag_id = ?
@@ -148,4 +160,34 @@ type RemoveTagFromFileParams struct {
 func (q *Queries) RemoveTagFromFile(ctx context.Context, arg RemoveTagFromFileParams) error {
 	_, err := q.db.ExecContext(ctx, removeTagFromFile, arg.FileID, arg.TagID)
 	return err
+}
+
+const removeTagFromFilesByPrefix = `-- name: RemoveTagFromFilesByPrefix :exec
+DELETE FROM file_tags
+WHERE tag_id = ?
+  AND file_id IN (SELECT id FROM files WHERE path LIKE ? || '%')
+`
+
+type RemoveTagFromFilesByPrefixParams struct {
+	TagID   int64   `json:"tag_id"`
+	Column2 *string `json:"column_2"`
+}
+
+func (q *Queries) RemoveTagFromFilesByPrefix(ctx context.Context, arg RemoveTagFromFilesByPrefixParams) error {
+	_, err := q.db.ExecContext(ctx, removeTagFromFilesByPrefix, arg.TagID, arg.Column2)
+	return err
+}
+
+const upsertTag = `-- name: UpsertTag :one
+INSERT INTO tags (name)
+VALUES (?)
+ON CONFLICT(name) DO UPDATE SET name = excluded.name
+RETURNING id, name
+`
+
+func (q *Queries) UpsertTag(ctx context.Context, name string) (Tag, error) {
+	row := q.db.QueryRowContext(ctx, upsertTag, name)
+	var i Tag
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
 }

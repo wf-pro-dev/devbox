@@ -7,26 +7,46 @@ package db
 
 import (
 	"context"
+	"strings"
 )
 
+const countFiles = `-- name: CountFiles :one
+SELECT COUNT(*) FROM files
+`
+
+func (q *Queries) CountFiles(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFiles)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countFilesByPrefix = `-- name: CountFilesByPrefix :one
+SELECT COUNT(*) FROM files WHERE path LIKE ? || '%'
+`
+
+func (q *Queries) CountFilesByPrefix(ctx context.Context, dollar_1 *string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFilesByPrefix, dollar_1)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFile = `-- name: CreateFile :one
-INSERT INTO files (id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at
+INSERT INTO files (id, path, file_name, description, language, size, sha256, uploaded_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type CreateFileParams struct {
-	ID          string  `json:"id"`
-	Path        string  `json:"path"`
-	FileName    string  `json:"file_name"`
-	DirID       *string `json:"dir_id"`
-	DirPrefix   string  `json:"dir_prefix"`
-	Description string  `json:"description"`
-	Language    string  `json:"language"`
-	Size        int64   `json:"size"`
-	BlobPath    string  `json:"blob_path"`
-	Sha256      string  `json:"sha256"`
-	UploadedBy  string  `json:"uploaded_by"`
+	ID          string `json:"id"`
+	Path        string `json:"path"`
+	FileName    string `json:"file_name"`
+	Description string `json:"description"`
+	Language    string `json:"language"`
+	Size        int64  `json:"size"`
+	Sha256      string `json:"sha256"`
+	UploadedBy  string `json:"uploaded_by"`
 }
 
 func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, error) {
@@ -34,12 +54,9 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		arg.ID,
 		arg.Path,
 		arg.FileName,
-		arg.DirID,
-		arg.DirPrefix,
 		arg.Description,
 		arg.Language,
 		arg.Size,
-		arg.BlobPath,
 		arg.Sha256,
 		arg.UploadedBy,
 	)
@@ -48,12 +65,9 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		&i.ID,
 		&i.Path,
 		&i.FileName,
-		&i.DirID,
-		&i.DirPrefix,
 		&i.Description,
 		&i.Language,
 		&i.Size,
-		&i.BlobPath,
 		&i.Sha256,
 		&i.UploadedBy,
 		&i.Version,
@@ -72,49 +86,156 @@ func (q *Queries) DeleteFile(ctx context.Context, id string) error {
 	return err
 }
 
-const getFile = `-- name: GetFile :one
-SELECT id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at FROM files WHERE id = ? LIMIT 1
+const deleteFiles = `-- name: DeleteFiles :exec
+DELETE FROM files WHERE id IN (/*SLICE:ids*/?)
 `
 
-func (q *Queries) GetFile(ctx context.Context, id string) (File, error) {
-	row := q.db.QueryRowContext(ctx, getFile, id)
-	var i File
-	err := row.Scan(
-		&i.ID,
-		&i.Path,
-		&i.FileName,
-		&i.DirID,
-		&i.DirPrefix,
-		&i.Description,
-		&i.Language,
-		&i.Size,
-		&i.BlobPath,
-		&i.Sha256,
-		&i.UploadedBy,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+func (q *Queries) DeleteFiles(ctx context.Context, ids []string) error {
+	query := deleteFiles
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
 }
 
-const listFileIDsForDir = `-- name: ListFileIDsForDir :many
-SELECT id FROM files WHERE dir_id = ?
+const deleteFilesByPrefix = `-- name: DeleteFilesByPrefix :exec
+DELETE FROM files WHERE path LIKE ? || '%'
 `
 
-func (q *Queries) ListFileIDsForDir(ctx context.Context, dirID *string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listFileIDsForDir, dirID)
+func (q *Queries) DeleteFilesByPrefix(ctx context.Context, dollar_1 *string) error {
+	_, err := q.db.ExecContext(ctx, deleteFilesByPrefix, dollar_1)
+	return err
+}
+
+const getFiles = `-- name: GetFiles :many
+SELECT id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
+WHERE id IN (/*SLICE:ids*/?)
+ORDER BY path ASC
+`
+
+func (q *Queries) GetFiles(ctx context.Context, ids []string) ([]File, error) {
+	query := getFiles
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []File{}
+	for rows.Next() {
+		var i File
+		if err := rows.Scan(
+			&i.ID,
+			&i.Path,
+			&i.FileName,
+			&i.Description,
+			&i.Language,
+			&i.Size,
+			&i.Sha256,
+			&i.UploadedBy,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFilesByPath = `-- name: GetFilesByPath :many
+SELECT id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
+WHERE path IN (/*SLICE:paths*/?)
+ORDER BY path ASC
+`
+
+func (q *Queries) GetFilesByPath(ctx context.Context, paths []string) ([]File, error) {
+	query := getFilesByPath
+	var queryParams []interface{}
+	if len(paths) > 0 {
+		for _, v := range paths {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:paths*/?", strings.Repeat(",?", len(paths))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:paths*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []File{}
+	for rows.Next() {
+		var i File
+		if err := rows.Scan(
+			&i.ID,
+			&i.Path,
+			&i.FileName,
+			&i.Description,
+			&i.Language,
+			&i.Size,
+			&i.Sha256,
+			&i.UploadedBy,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDistinctDirs = `-- name: ListDistinctDirs :many
+SELECT DISTINCT substr(path, 1, instr(path, '/') - 1) AS dir
+FROM files
+WHERE instr(path, '/') > 0
+ORDER BY dir ASC
+`
+
+func (q *Queries) ListDistinctDirs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctDirs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []string{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var dir string
+		if err := rows.Scan(&dir); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, dir)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -126,11 +247,29 @@ func (q *Queries) ListFileIDsForDir(ctx context.Context, dirID *string) ([]strin
 }
 
 const listFiles = `-- name: ListFiles :many
-SELECT id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at FROM files ORDER BY created_at DESC
+SELECT DISTINCT f.id, f.path, f.file_name, f.description, f.language, f.size, f.sha256, f.uploaded_by, f.version, f.created_at, f.updated_at
+FROM files f
+LEFT JOIN file_tags ft ON ft.file_id = f.id
+LEFT JOIN tags      t  ON t.id = ft.tag_id
+WHERE (?1 IS NULL OR f.path     LIKE ?1 || '%')
+  AND (?2    IS NULL OR t.name    =     ?2)
+  AND (?3   IS NULL OR f.language =    ?3)
+ORDER BY f.path ASC
 `
 
-func (q *Queries) ListFiles(ctx context.Context) ([]File, error) {
-	rows, err := q.db.QueryContext(ctx, listFiles)
+type ListFilesParams struct {
+	Prefix interface{} `json:"prefix"`
+	Tag    interface{} `json:"tag"`
+	Lang   interface{} `json:"lang"`
+}
+
+// ListFiles is the single entry point for querying files.
+// Pass NULL for any filter you want to ignore.
+// prefix: path LIKE prefix || '%'   e.g. 'nginx/'
+// tag   : join on tags.name         e.g. 'prod'
+// lang  : language =                e.g. 'bash'
+func (q *Queries) ListFiles(ctx context.Context, arg ListFilesParams) ([]File, error) {
+	rows, err := q.db.QueryContext(ctx, listFiles, arg.Prefix, arg.Tag, arg.Lang)
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +281,9 @@ func (q *Queries) ListFiles(ctx context.Context) ([]File, error) {
 			&i.ID,
 			&i.Path,
 			&i.FileName,
-			&i.DirID,
-			&i.DirPrefix,
 			&i.Description,
 			&i.Language,
 			&i.Size,
-			&i.BlobPath,
 			&i.Sha256,
 			&i.UploadedBy,
 			&i.Version,
@@ -167,182 +303,31 @@ func (q *Queries) ListFiles(ctx context.Context) ([]File, error) {
 	return items, nil
 }
 
-const listFilesByDir = `-- name: ListFilesByDir :many
-SELECT id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at FROM files WHERE dir_id = ? ORDER BY path ASC
-`
-
-func (q *Queries) ListFilesByDir(ctx context.Context, dirID *string) ([]File, error) {
-	rows, err := q.db.QueryContext(ctx, listFilesByDir, dirID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []File{}
-	for rows.Next() {
-		var i File
-		if err := rows.Scan(
-			&i.ID,
-			&i.Path,
-			&i.FileName,
-			&i.DirID,
-			&i.DirPrefix,
-			&i.Description,
-			&i.Language,
-			&i.Size,
-			&i.BlobPath,
-			&i.Sha256,
-			&i.UploadedBy,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listFilesByLanguage = `-- name: ListFilesByLanguage :many
-SELECT id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at FROM files WHERE language = ? ORDER BY created_at DESC
-`
-
-func (q *Queries) ListFilesByLanguage(ctx context.Context, language string) ([]File, error) {
-	rows, err := q.db.QueryContext(ctx, listFilesByLanguage, language)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []File{}
-	for rows.Next() {
-		var i File
-		if err := rows.Scan(
-			&i.ID,
-			&i.Path,
-			&i.FileName,
-			&i.DirID,
-			&i.DirPrefix,
-			&i.Description,
-			&i.Language,
-			&i.Size,
-			&i.BlobPath,
-			&i.Sha256,
-			&i.UploadedBy,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listFilesNoDir = `-- name: ListFilesNoDir :many
-SELECT id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at FROM files WHERE dir_id IS NULL ORDER BY created_at DESC
-`
-
-func (q *Queries) ListFilesNoDir(ctx context.Context) ([]File, error) {
-	rows, err := q.db.QueryContext(ctx, listFilesNoDir)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []File{}
-	for rows.Next() {
-		var i File
-		if err := rows.Scan(
-			&i.ID,
-			&i.Path,
-			&i.FileName,
-			&i.DirID,
-			&i.DirPrefix,
-			&i.Description,
-			&i.Language,
-			&i.Size,
-			&i.BlobPath,
-			&i.Sha256,
-			&i.UploadedBy,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateFile = `-- name: UpdateFile :one
+const moveFile = `-- name: MoveFile :one
 UPDATE files
-SET path        = ?,
-    file_name   = ?,
-    description = ?,
-    language    = ?,
-    size        = ?,
-    blob_path   = ?,
-    sha256      = ?,
-    uploaded_by = ?,
-    updated_at  = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+SET path       = ?,
+    file_name  = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id = ?
-RETURNING id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at
+RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
-type UpdateFileParams struct {
-	Path        string `json:"path"`
-	FileName    string `json:"file_name"`
-	Description string `json:"description"`
-	Language    string `json:"language"`
-	Size        int64  `json:"size"`
-	BlobPath    string `json:"blob_path"`
-	Sha256      string `json:"sha256"`
-	UploadedBy  string `json:"uploaded_by"`
-	ID          string `json:"id"`
+type MoveFileParams struct {
+	Path     string `json:"path"`
+	FileName string `json:"file_name"`
+	ID       string `json:"id"`
 }
 
-func (q *Queries) UpdateFile(ctx context.Context, arg UpdateFileParams) (File, error) {
-	row := q.db.QueryRowContext(ctx, updateFile,
-		arg.Path,
-		arg.FileName,
-		arg.Description,
-		arg.Language,
-		arg.Size,
-		arg.BlobPath,
-		arg.Sha256,
-		arg.UploadedBy,
-		arg.ID,
-	)
+func (q *Queries) MoveFile(ctx context.Context, arg MoveFileParams) (File, error) {
+	row := q.db.QueryRowContext(ctx, moveFile, arg.Path, arg.FileName, arg.ID)
 	var i File
 	err := row.Scan(
 		&i.ID,
 		&i.Path,
 		&i.FileName,
-		&i.DirID,
-		&i.DirPrefix,
 		&i.Description,
 		&i.Language,
 		&i.Size,
-		&i.BlobPath,
 		&i.Sha256,
 		&i.UploadedBy,
 		&i.Version,
@@ -354,18 +339,16 @@ func (q *Queries) UpdateFile(ctx context.Context, arg UpdateFileParams) (File, e
 
 const updateFileContent = `-- name: UpdateFileContent :one
 UPDATE files
-SET blob_path   = ?,
-    sha256      = ?,
+SET sha256 = ?,
     size        = ?,
     version     = ?,
     uploaded_by = ?,
     updated_at  = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id = ?
-RETURNING id, path, file_name, dir_id, dir_prefix, description, language, size, blob_path, sha256, uploaded_by, version, created_at, updated_at
+RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type UpdateFileContentParams struct {
-	BlobPath   string `json:"blob_path"`
 	Sha256     string `json:"sha256"`
 	Size       int64  `json:"size"`
 	Version    int64  `json:"version"`
@@ -373,10 +356,8 @@ type UpdateFileContentParams struct {
 	ID         string `json:"id"`
 }
 
-// Updates blob content and bumps version number. Called after snapshotting.
 func (q *Queries) UpdateFileContent(ctx context.Context, arg UpdateFileContentParams) (File, error) {
 	row := q.db.QueryRowContext(ctx, updateFileContent,
-		arg.BlobPath,
 		arg.Sha256,
 		arg.Size,
 		arg.Version,
@@ -388,12 +369,43 @@ func (q *Queries) UpdateFileContent(ctx context.Context, arg UpdateFileContentPa
 		&i.ID,
 		&i.Path,
 		&i.FileName,
-		&i.DirID,
-		&i.DirPrefix,
 		&i.Description,
 		&i.Language,
 		&i.Size,
-		&i.BlobPath,
+		&i.Sha256,
+		&i.UploadedBy,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateFileMeta = `-- name: UpdateFileMeta :one
+UPDATE files
+SET description = ?,
+    language    = ?,
+    updated_at  = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+WHERE id = ?
+RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
+`
+
+type UpdateFileMetaParams struct {
+	Description string `json:"description"`
+	Language    string `json:"language"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) UpdateFileMeta(ctx context.Context, arg UpdateFileMetaParams) (File, error) {
+	row := q.db.QueryRowContext(ctx, updateFileMeta, arg.Description, arg.Language, arg.ID)
+	var i File
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.FileName,
+		&i.Description,
+		&i.Language,
+		&i.Size,
 		&i.Sha256,
 		&i.UploadedBy,
 		&i.Version,

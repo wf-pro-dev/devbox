@@ -4,31 +4,25 @@
 
 package db
 
-type Directory struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Prefix      string `json:"prefix"`
-	Description string `json:"description"`
-	UploadedBy  string `json:"uploaded_by"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+type Blob struct {
+	Sha256    string `json:"sha256"`
+	Size      int64  `json:"size"`
+	RefCount  int64  `json:"ref_count"`
+	CreatedAt string `json:"created_at"`
 }
 
 type File struct {
-	ID          string  `json:"id"`
-	Path        string  `json:"path"`
-	FileName    string  `json:"file_name"`
-	DirID       *string `json:"dir_id"`
-	DirPrefix   string  `json:"dir_prefix"`
-	Description string  `json:"description"`
-	Language    string  `json:"language"`
-	Size        int64   `json:"size"`
-	BlobPath    string  `json:"blob_path"`
-	Sha256      string  `json:"sha256"`
-	UploadedBy  string  `json:"uploaded_by"`
-	Version     int64   `json:"version"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID          string `json:"id"`
+	Path        string `json:"path"`
+	FileName    string `json:"file_name"`
+	Description string `json:"description"`
+	Language    string `json:"language"`
+	Size        int64  `json:"size"`
+	Sha256      string `json:"sha256"`
+	UploadedBy  string `json:"uploaded_by"`
+	Version     int64  `json:"version"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type FileTag struct {
@@ -52,20 +46,19 @@ type Transfer struct {
 	ID         int64  `json:"id"`
 	FromHost   string `json:"from_host"`
 	ToHost     string `json:"to_host"`
-	Filename   string `json:"filename"`
+	FilePath   string `json:"file_path"`
 	Size       int64  `json:"size"`
 	DurationMs int64  `json:"duration_ms"`
 	CreatedAt  string `json:"created_at"`
 }
 
 type Version struct {
-	ID            int64  `json:"id"`
-	FileID        string `json:"file_id"`
-	VersionNumber int64  `json:"version_number"`
-	BlobPath      string `json:"blob_path"`
-	Sha256        string `json:"sha256"`
-	Size          int64  `json:"size"`
-	UploadedBy    string `json:"uploaded_by"`
-	Message       string `json:"message"`
-	CreatedAt     string `json:"created_at"`
+	ID         int64  `json:"id"`
+	FileID     string `json:"file_id"`
+	Version    int64  `json:"version"`
+	Sha256     string `json:"sha256"`
+	Size       int64  `json:"size"`
+	UploadedBy string `json:"uploaded_by"`
+	Message    string `json:"message"`
+	CreatedAt  string `json:"created_at"`
 }

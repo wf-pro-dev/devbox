@@ -1,11 +1,12 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { api, formatBytes, formatDate, langColor } from '../api.js';
+  import { formatBytes, formatDate, langColor, api } from '../api.js';
   import DeliverModal from './DeliverModal.svelte';
+  import { File } from '../types.ts';
 
   let showDeliver = false;
 
-  export let file;
+  export let file: File;
   const dispatch = createEventDispatcher();
 
   let content = '';
@@ -26,7 +27,7 @@
   }
 
   async function deleteFile() {
-    if (!confirm(`Delete "${file.name}"?`)) return;
+    if (!confirm(`Delete "${file.file_name}"?`)) return;
     deleting = true;
     try {
       await api.deleteFile(file.id);
@@ -57,7 +58,7 @@
   function download() {
     const a = document.createElement('a');
     a.href = `/files/${file.id}`;
-    a.download = file.name;
+    a.download = file.file_name;
     a.click();
   }
 
@@ -69,7 +70,7 @@
 <div class="panel">
   <div class="header">
     <div class="title">
-      <span class="fname">{file.name}</span>
+      <span class="fname">{file.file_name}</span>
       <span class="lang" style="--c:{langColor(file.language)}">{file.language}</span>
     </div>
     <button class="close" on:click={() => dispatch('close')}>

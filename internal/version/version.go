@@ -1,6 +1,3 @@
-// Package version implements file versioning logic for devbox.
-// It handles sha256-based change detection, snapshotting old versions,
-// updating file content, and pruning old versions.
 package version
 
 import (
@@ -8,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/storage"
@@ -16,23 +12,19 @@ import (
 
 const DefaultMaxVersions = 10
 
-// UpdateResult describes the outcome of a single file update attempt.
-type UpdateResult int
+// Result describes the outcome of an Update call.
+type Result int
 
 const (
-	ResultUpdated   UpdateResult = iota // new version created
-	ResultUnchanged                     // sha256 matched, nothing done
+	ResultUpdated   Result = iota // content changed, new version created
+	ResultUnchanged               // sha256 matched, nothing written
 )
 
-func (r UpdateResult) String() string {
-	switch r {
-	case ResultUpdated:
+func (r Result) String() string {
+	if r == ResultUpdated {
 		return "updated"
-	case ResultUnchanged:
-		return "unchanged"
-	default:
-		return "unknown"
 	}
+	return "unchanged"
 }
 
 // Service handles versioning operations.
@@ -42,7 +34,7 @@ type Service struct {
 	maxVersions int
 }
 
-// New creates a new versioning Service.
+// New creates a Service. maxVersions <= 0 uses DefaultMaxVersions.
 func New(queries *db.Queries, blobs *storage.BlobStore, maxVersions int) *Service {
 	if maxVersions <= 0 {
 		maxVersions = DefaultMaxVersions
@@ -50,146 +42,173 @@ func New(queries *db.Queries, blobs *storage.BlobStore, maxVersions int) *Servic
 	return &Service{queries: queries, blobs: blobs, maxVersions: maxVersions}
 }
 
-// UpdateParams holds the inputs for a file content update.
+// UpdateParams is the input to Update.
 type UpdateParams struct {
 	FileID     string
 	NewContent io.Reader
 	UploadedBy string
-	Message    string
+	Message    string // optional commit-style message
 }
 
-// Update applies a content update to a file if the content has changed.
-// Returns ResultUnchanged if sha256 matches — no DB writes occur.
-// Returns ResultUpdated if content changed — old version is snapshotted,
-// file record updated, and old versions pruned to maxVersions.
-func (s *Service) Update(ctx context.Context, p UpdateParams) (UpdateResult, db.File, error) {
-	// Fetch current file state.
-	file, err := s.queries.GetFile(ctx, p.FileID)
+// Update applies a content change to a file if the content has changed.
+//
+// Flow:
+//  1. Write incoming bytes to the blob store (deduplicates by sha256).
+//  2. If sha256 matches current file — return ResultUnchanged, no DB writes.
+//  3. Snapshot current state as a versions row (no blob copy — CAS).
+//  4. Update files row to point at new sha256, bump version number.
+//  5. Prune versions beyond maxVersions.
+func (s *Service) Update(ctx context.Context, p UpdateParams) (Result, db.File, error) {
+	file, err := s.getFile(ctx, p.FileID)
 	if err != nil {
 		return 0, db.File{}, fmt.Errorf("get file: %w", err)
 	}
 
-	// Write incoming content to a temp blob to compute sha256.
-	tmpID := p.FileID + "-tmp"
-	size, newSHA256, err := s.blobs.Write(tmpID, p.NewContent)
+	wr, err := s.blobs.Write(ctx, p.NewContent)
 	if err != nil {
-		return 0, db.File{}, fmt.Errorf("write temp blob: %w", err)
+		return 0, db.File{}, fmt.Errorf("write blob: %w", err)
 	}
 
-	// No change — clean up temp blob and return early.
-	if newSHA256 == file.Sha256 {
-		s.blobs.Delete(tmpID)
+	if wr.SHA256 == file.Sha256 {
 		return ResultUnchanged, file, nil
 	}
 
-	// Content changed — snapshot the current version first.
-	latestNumIntf, err := s.queries.GetLatestVersionNumber(ctx, p.FileID)
-	if err != nil {
-		s.blobs.Delete(tmpID)
-		return 0, db.File{}, fmt.Errorf("get latest version number: %w", err)
-	}
-	latestNum := latestNumIntf.(int64)
-	nextNum := latestNum + 1
-
-	// Copy current blob to a stable versioned path before overwriting.
-	versionBlobID := fmt.Sprintf("%s-v%d", p.FileID, latestNum)
-	if err := copyBlob(s.blobs, p.FileID, versionBlobID); err != nil {
-		s.blobs.Delete(tmpID)
-		return 0, db.File{}, fmt.Errorf("snapshot blob: %w", err)
-	}
-
-	// Record the snapshot in the versions table.
 	if _, err := s.queries.SnapshotVersion(ctx, db.SnapshotVersionParams{
-		FileID:        p.FileID,
-		VersionNumber: nextNum,
-		BlobPath:      s.blobs.BlobPath(versionBlobID),
-		Sha256:        file.Sha256,
-		Size:          file.Size,
-		UploadedBy:    file.UploadedBy,
-		Message:       p.Message,
+		FileID:     p.FileID,
+		Version:    file.Version,
+		Sha256:     file.Sha256,
+		Size:       file.Size,
+		UploadedBy: file.UploadedBy,
+		Message:    p.Message,
 	}); err != nil {
-		s.blobs.Delete(tmpID)
-		s.blobs.Delete(versionBlobID)
 		return 0, db.File{}, fmt.Errorf("snapshot version: %w", err)
 	}
 
-	// Promote temp blob to the canonical file blob path.
-	if err := s.blobs.Replace(p.FileID, tmpID); err != nil {
-		s.blobs.Delete(tmpID)
-		return 0, db.File{}, fmt.Errorf("promote blob: %w", err)
-	}
-
-	// Update the file record with new content metadata.
 	updated, err := s.queries.UpdateFileContent(ctx, db.UpdateFileContentParams{
 		ID:         p.FileID,
-		BlobPath:   s.blobs.BlobPath(p.FileID),
-		Sha256:     newSHA256,
-		Size:       size,
-		Version:    nextNum,
+		Sha256:     wr.SHA256,
+		Size:       wr.Size,
+		Version:    file.Version + 1,
 		UploadedBy: p.UploadedBy,
 	})
 	if err != nil {
 		return 0, db.File{}, fmt.Errorf("update file record: %w", err)
 	}
 
-	// Prune versions beyond maxVersions.
-	s.pruneVersions(ctx, p.FileID)
+	go s.pruneVersions(context.Background(), p.FileID)
 
 	return ResultUpdated, updated, nil
 }
 
-// pruneVersions deletes version rows and blobs beyond s.maxVersions.
-// Strategy: find the minimum version_number among the N most recent,
-// then delete everything older than that cutoff.
+// Rollback restores a file to a previous version.
+// Implemented as a forward update so no history is lost — current state is
+// snapshotted before the target version's blob is restored.
+func (s *Service) Rollback(ctx context.Context, fileID string, targetVersion int64, uploadedBy string) (db.File, error) {
+	// Find the target version in the version list.
+	versions, err := s.queries.ListVersions(ctx, db.ListVersionsParams{
+		FileID: &fileID,
+	})
+	if err != nil {
+		return db.File{}, fmt.Errorf("list versions: %w", err)
+	}
+	var target *db.Version
+	for i := range versions {
+		if versions[i].Version == targetVersion {
+			target = &versions[i]
+			break
+		}
+	}
+	if target == nil {
+		return db.File{}, fmt.Errorf("version %d not found", targetVersion)
+	}
+
+	file, err := s.getFile(ctx, fileID)
+	if err != nil {
+		return db.File{}, fmt.Errorf("get file: %w", err)
+	}
+
+	latestNumIntrface, err := s.queries.GetLatestVersionNumber(ctx, fileID)
+	if err != nil {
+		return db.File{}, fmt.Errorf("get latest version: %w", err)
+	}
+	latestNum, ok := latestNumIntrface.(int64)
+	if !ok {
+		return db.File{}, fmt.Errorf("get latest version: %w", err)
+	}
+
+	if _, err := s.queries.SnapshotVersion(ctx, db.SnapshotVersionParams{
+		FileID:     fileID,
+		Version:    latestNum,
+		Sha256:     file.Sha256,
+		Size:       file.Size,
+		UploadedBy: file.UploadedBy,
+		Message:    fmt.Sprintf("pre-rollback snapshot (was v%d)", latestNum),
+	}); err != nil {
+		return db.File{}, fmt.Errorf("snapshot before rollback: %w", err)
+	}
+
+	updated, err := s.queries.UpdateFileContent(ctx, db.UpdateFileContentParams{
+		ID:         fileID,
+		Sha256:     target.Sha256,
+		Size:       target.Size,
+		Version:    latestNum + 1,
+		UploadedBy: uploadedBy,
+	})
+	if err != nil {
+		return db.File{}, fmt.Errorf("update file for rollback: %w", err)
+	}
+
+	go s.pruneVersions(context.Background(), fileID)
+
+	return updated, nil
+}
+
+// getFile fetches a single file by ID using GetFiles (the canonical point query).
+func (s *Service) getFile(ctx context.Context, fileID string) (db.File, error) {
+	files, err := s.queries.GetFiles(ctx, []string{fileID})
+	if err != nil {
+		return db.File{}, err
+	}
+	if len(files) == 0 {
+		return db.File{}, fmt.Errorf("file %s not found", fileID)
+	}
+	return files[0], nil
+}
+
+// pruneVersions deletes version rows beyond maxVersions and cleans orphaned blobs.
 func (s *Service) pruneVersions(ctx context.Context, fileID string) {
-	// Find the cutoff: lowest version_number we want to keep.
-	minKeepIntf, err := s.queries.GetMinVersionToKeep(ctx, db.GetMinVersionToKeepParams{
+	minKeepIntrface, err := s.queries.GetMinVersionToKeep(ctx, db.GetMinVersionToKeepParams{
 		FileID: fileID,
 		Limit:  int64(s.maxVersions),
 	})
-	if err != nil {
-		log.Printf("version prune: get min version for %s: %v", fileID, err)
+	minKeep, ok := minKeepIntrface.(int64)
+	if !ok {
 		return
 	}
-	minKeep := minKeepIntf.(int64)
-	// Nothing to prune if all versions fall within the keep window.
-	if minKeep == 0 {
+	if err != nil || minKeep == 0 {
 		return
 	}
 
-	// Collect blob paths before deleting rows so we can clean up disk.
-	paths, err := s.queries.GetOldBlobPaths(ctx, db.GetOldBlobPathsParams{
-		FileID:        fileID,
-		VersionNumber: minKeep,
+	prunable, err := s.queries.ListPrunableVersions(ctx, db.ListPrunableVersionsParams{
+		FileID:  fileID,
+		Version: minKeep,
 	})
 	if err != nil {
-		log.Printf("version prune: get old blob paths for %s: %v", fileID, err)
+		log.Printf("version prune: list prunable for %s: %v", fileID, err)
 		return
-	}
-
-	for _, path := range paths {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("version prune: delete blob %s: %v", path, err)
-		}
 	}
 
 	if err := s.queries.PruneOldVersions(ctx, db.PruneOldVersionsParams{
-		FileID:        fileID,
-		VersionNumber: minKeep,
+		FileID:  fileID,
+		Version: minKeep,
 	}); err != nil {
 		log.Printf("version prune: delete rows for %s: %v", fileID, err)
+		return
 	}
-}
 
-// copyBlob copies the blob at srcID to dstID in the blob store.
-func copyBlob(blobs *storage.BlobStore, srcID, dstID string) error {
-	r, err := blobs.Read(srcID)
-	if err != nil {
-		return fmt.Errorf("read src blob: %w", err)
+	for _, v := range prunable {
+		if err := s.blobs.DeleteIfUnreferenced(ctx, v.Sha256); err != nil {
+			log.Printf("version prune: cleanup blob %s: %v", v.Sha256[:8], err)
+		}
 	}
-	defer r.Close()
-	if _, _, err := blobs.Write(dstID, r); err != nil {
-		return fmt.Errorf("write dst blob: %w", err)
-	}
-	return nil
 }

@@ -1,0 +1,20 @@
+-- search.sql
+--
+-- FTS5 queries cannot be validated by sqlc (virtual table syntax).
+-- Search is implemented directly in internal/search/search.go using *sql.DB.
+--
+-- Queries used at runtime:
+--
+-- File search:
+--   SELECT f.* FROM files f
+--   JOIN files_fts fts ON fts.file_id = f.id
+--   WHERE files_fts MATCH ?
+--   ORDER BY rank;
+--
+-- Collection search (simple LIKE  collections are few and named):
+--   SELECT * FROM collections
+--   WHERE name LIKE ? OR description LIKE ?
+--   ORDER BY name;
+--
+-- Update FTS content (called after file upload/update):
+--   UPDATE files_fts SET content = ? WHERE file_id = ?;-- search.sql

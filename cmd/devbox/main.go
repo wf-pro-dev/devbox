@@ -35,7 +35,7 @@ func main() {
 	if blobPath == "" {
 		blobPath = "./data/blobs"
 	}
-	blobs, err := storage.NewBlobStore(blobPath)
+	blobs, err := storage.NewBlobStore(blobPath, store.DB)
 	if err != nil {
 		log.Fatalf("blobstore: %v", err)
 	}

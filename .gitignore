@@ -20,6 +20,7 @@ ts-state/
 /devbox-cli
 cmd/devbox/devbox
 cmd/devbox-cli/devbox-cli
+bin/
 *.exe
 *.exe~
 *.dll

@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -9,105 +11,173 @@ import (
 	"path/filepath"
 )
 
-// BlobStore manages raw file content on disk.
+// BlobStore manages raw file content on disk using content-addressable storage.
+//
+// Layout: <root>/<sha[0:2]>/<sha[2:4]>/<sha>
+// Blobs are stored zstd-compressed. Two files with identical content share
+// one blob. Ref-counts are maintained in the blobs DB table via triggers —
+// the BlobStore only manages the disk side.
 type BlobStore struct {
 	root string
+	db   *sql.DB // used only for ref-count queries
 }
 
-// NewBlobStore creates a BlobStore rooted at the given directory.
-func NewBlobStore(root string) (*BlobStore, error) {
+// NewBlobStore creates a BlobStore rooted at dir.
+func NewBlobStore(root string, db *sql.DB) (*BlobStore, error) {
 	if err := os.MkdirAll(root, 0755); err != nil {
-		return nil, fmt.Errorf("create blob dir: %w", err)
+		return nil, fmt.Errorf("create blob root: %w", err)
 	}
-	return &BlobStore{root: root}, nil
+	return &BlobStore{root: root, db: db}, nil
 }
 
-// Write saves the contents of r to disk under fileID and returns the
-// file size and SHA256 hex digest. The file is written atomically via
-// a temp file to avoid partial writes being visible.
-func (bs *BlobStore) Write(fileID string, r io.Reader) (size int64, sha256hex string, err error) {
-	// Write to a temp file first.
+// WriteResult is returned by Write.
+type WriteResult struct {
+	SHA256 string // hex digest of the UNCOMPRESSED content
+	Size   int64  // size of the UNCOMPRESSED content in bytes
+	Dedupd bool   // true if blob already existed (no disk write performed)
+}
+
+// Write reads all of r, computes sha256, and stores the blob compressed on disk
+// if it does not already exist (content-addressable deduplication).
+// It also inserts a row into the blobs table if this is a new sha256.
+// The initial ref_count is set to 0 — the DB trigger on files/versions INSERT
+// will increment it when the file row is created.
+func (bs *BlobStore) Write(ctx context.Context, r io.Reader) (WriteResult, error) {
+	// Buffer the content so we can compute sha256 before writing to disk.
 	tmp, err := os.CreateTemp(bs.root, "upload-*")
 	if err != nil {
-		return 0, "", fmt.Errorf("create temp file: %w", err)
+		return WriteResult{}, fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer func() {
-		// Clean up temp file on any error.
-		if err != nil {
-			os.Remove(tmpPath)
-		}
-	}()
+	defer os.Remove(tmpPath) // always clean up temp
 
 	h := sha256.New()
-	mw := io.MultiWriter(tmp, h)
-
-	size, err = io.Copy(mw, r)
+	size, err := io.Copy(io.MultiWriter(tmp, h), r)
 	if err != nil {
 		tmp.Close()
-		return 0, "", fmt.Errorf("write blob: %w", err)
+		return WriteResult{}, fmt.Errorf("read content: %w", err)
 	}
-	if err = tmp.Close(); err != nil {
-		return 0, "", fmt.Errorf("close temp file: %w", err)
+	tmp.Close()
+
+	digest := hex.EncodeToString(h.Sum(nil))
+	result := WriteResult{SHA256: digest, Size: size}
+
+	// If this sha256 already exists in the DB, no disk write needed.
+	var existing int
+	err = bs.db.QueryRowContext(ctx,
+		`SELECT 1 FROM blobs WHERE sha256 = ? LIMIT 1`, digest,
+	).Scan(&existing)
+	if err == nil {
+		// Blob already on disk — just return.
+		result.Dedupd = true
+		return result, nil
+	}
+	if err != sql.ErrNoRows {
+		return WriteResult{}, fmt.Errorf("check blob exists: %w", err)
 	}
 
-	sha256hex = hex.EncodeToString(h.Sum(nil))
-
-	// Atomically move to the final path.
-	finalPath := bs.path(fileID)
-	if err = os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
-		return 0, "", fmt.Errorf("create blob subdir: %w", err)
-	}
-	if err = os.Rename(tmpPath, finalPath); err != nil {
-		return 0, "", fmt.Errorf("move blob: %w", err)
+	// New blob — compress and write to final CAS path.
+	finalPath := bs.Path(digest)
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
+		return WriteResult{}, fmt.Errorf("create blob dir: %w", err)
 	}
 
-	return size, sha256hex, nil
-}
-
-// Read opens the blob for the given fileID for reading.
-// The caller is responsible for closing the returned file.
-func (bs *BlobStore) Read(fileID string) (*os.File, error) {
-	f, err := os.Open(bs.path(fileID))
+	// Re-open temp file for reading.
+	src, err := os.Open(tmpPath)
 	if err != nil {
-		return nil, fmt.Errorf("open blob %s: %w", fileID, err)
+		return WriteResult{}, fmt.Errorf("reopen temp: %w", err)
 	}
-	return f, nil
+	defer src.Close()
+
+	dst, err := os.Create(finalPath)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("create blob file: %w", err)
+	}
+	if _, err := compressTo(dst, src); err != nil {
+		dst.Close()
+		os.Remove(finalPath)
+		return WriteResult{}, fmt.Errorf("compress blob: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(finalPath)
+		return WriteResult{}, fmt.Errorf("close blob: %w", err)
+	}
+
+	// Register in blobs table with ref_count=0.
+	// The INSERT trigger on files/versions will bump it to 1.
+	_, err = bs.db.ExecContext(ctx,
+		`INSERT INTO blobs (sha256, size, ref_count) VALUES (?, ?, 0)
+		 ON CONFLICT(sha256) DO NOTHING`,
+		digest, size,
+	)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("register blob: %w", err)
+	}
+
+	return result, nil
 }
 
-// Delete removes the blob for the given fileID from disk.
-func (bs *BlobStore) Delete(fileID string) error {
-	if err := os.Remove(bs.path(fileID)); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("delete blob %s: %w", fileID, err)
+// Open returns a decompressing reader for the blob with the given sha256.
+// The caller must close the returned ReadCloser.
+func (bs *BlobStore) Open(sha256hex string) (io.ReadCloser, error) {
+	f, err := os.Open(bs.Path(sha256hex))
+	if err != nil {
+		return nil, fmt.Errorf("open blob %s: %w", sha256hex[:8], err)
 	}
-	return nil
+	dec, err := decompressFrom(f)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("decompress blob: %w", err)
+	}
+	// Wrap so closing the decompressor also closes the file.
+	return &blobReadCloser{ReadCloser: dec, file: f}, nil
 }
 
-// Replace atomically replaces the blob at dstID with the blob at srcID,
-// then deletes srcID. Used to promote a temp blob to the canonical path.
-func (bs *BlobStore) Replace(dstID, srcID string) error {
-	srcPath := bs.path(srcID)
-	dstPath := bs.path(dstID)
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-		return fmt.Errorf("create dst dir: %w", err)
+// DeleteIfUnreferenced removes the blob file from disk if its ref_count is 0.
+// Safe to call after deleting a file or version row — the DB trigger has already
+// decremented ref_count before this is called.
+func (bs *BlobStore) DeleteIfUnreferenced(ctx context.Context, sha256hex string) error {
+	var refCount int
+	err := bs.db.QueryRowContext(ctx,
+		`SELECT ref_count FROM blobs WHERE sha256 = ?`, sha256hex,
+	).Scan(&refCount)
+	if err == sql.ErrNoRows {
+		return nil // already gone
 	}
-	if err := os.Rename(srcPath, dstPath); err != nil {
-		return fmt.Errorf("replace blob: %w", err)
+	if err != nil {
+		return fmt.Errorf("check ref count: %w", err)
 	}
-	return nil
+	if refCount > 0 {
+		return nil // still in use
+	}
+
+	// Remove from disk and blobs table.
+	if err := os.Remove(bs.Path(sha256hex)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete blob file: %w", err)
+	}
+	_, err = bs.db.ExecContext(ctx, `DELETE FROM blobs WHERE sha256 = ?`, sha256hex)
+	return err
 }
 
-// Files are sharded into subdirectories using the first 2 chars of the ID
-// to avoid having too many files in a single directory.
-func (bs *BlobStore) path(fileID string) string {
-	if len(fileID) < 2 {
-		return filepath.Join(bs.root, fileID)
+// path returns the disk path for a blob by its sha256 hex digest.
+// Sharded 2/2 like git: <root>/ab/cd/<full-sha>
+func (bs *BlobStore) Path(sha256hex string) string {
+	if len(sha256hex) < 4 {
+		return filepath.Join(bs.root, sha256hex)
 	}
-	return filepath.Join(bs.root, fileID[:2], fileID)
+	return filepath.Join(bs.root, sha256hex[0:2], sha256hex[2:4], sha256hex)
 }
 
-// BlobPath returns the full disk path for a given fileID.
-// Exposed so callers can store the path in the database.
-func (bs *BlobStore) BlobPath(fileID string) string {
-	return bs.path(fileID)
+// blobReadCloser closes both the decompressor and the underlying file.
+type blobReadCloser struct {
+	io.ReadCloser // zstd decoder
+	file          *os.File
+}
+
+func (b *blobReadCloser) Close() error {
+	err := b.ReadCloser.Close()
+	if ferr := b.file.Close(); ferr != nil && err == nil {
+		err = ferr
+	}
+	return err
 }
