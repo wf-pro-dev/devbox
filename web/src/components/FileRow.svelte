@@ -1,16 +1,46 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import { formatBytes, formatDateShort, langColor } from "../api";
+  import { formatBytes, formatDateShort, langColor, api } from "../api";
   import type { File } from "../types";
+  import { toast } from "svelte-sonner";
 
   export let file: File;
   export let selected = false;
+  export let deleting = false;
 
   const dispatch = createEventDispatcher<{
     click: void;
     tagClick: string;
     preview: File;
+    deleted: string;
   }>();
+
+  function shortText(fileName: string, maxLength: number = 30) {
+    return fileName.length < maxLength
+      ? fileName
+      : fileName.slice(0, maxLength) + "...";
+  }
+
+  async function deleteFile(e: MouseEvent) {
+    e.stopPropagation();
+    toast(`Delete "${shortText(file.file_name)}"?`, {
+      action: {
+        label: "Confirm",
+        onClick: async () => {
+          deleting = true;
+          try {
+            await api.deleteFile(file.id);
+            dispatch("deleted", file.id);
+            toast.success(`Deleted "${shortText(file.file_name, 40)}"`);
+          } catch (e: unknown) {
+            toast.error((e as Error).message);
+          } finally {
+            deleting = false;
+          }
+        },
+      },
+    });
+  }
 </script>
 
 <tr
@@ -79,26 +109,6 @@
 
   <!-- Actions -->
   <td class="cell-actions" on:click|stopPropagation>
-    <button
-      class="action-btn"
-      title="Preview"
-      on:click={() => dispatch("preview", file)}
-    >
-      <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
-        <circle
-          cx="8"
-          cy="8"
-          r="2.5"
-          stroke="currentColor"
-          stroke-width="1.4"
-        />
-        <path
-          d="M1.5 8C3 4.5 5.5 3 8 3s5 1.5 6.5 5c-1.5 3.5-4 5-6.5 5s-5-1.5-6.5-5z"
-          stroke="currentColor"
-          stroke-width="1.4"
-        />
-      </svg>
-    </button>
     <a
       class="action-btn"
       href="/files/{file.id}"
@@ -122,6 +132,21 @@
         />
       </svg>
     </a>
+    <button
+      class="action-btn danger"
+      title="Delete"
+      disabled={deleting}
+      on:click={deleteFile}
+    >
+      <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
+        <path
+          d="M3 4h10M6 4V3h4v1M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4"
+          stroke="currentColor"
+          stroke-width="1.3"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
   </td>
 </tr>
 
@@ -290,5 +315,10 @@
   .action-btn:hover {
     background: var(--bg-3);
     color: var(--text);
+  }
+
+  .action-btn.danger:hover {
+    background: #fef2f2;
+    color: #dc2626;
   }
 </style>

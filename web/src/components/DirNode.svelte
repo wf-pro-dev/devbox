@@ -1,18 +1,33 @@
 <script lang="ts">
-  import { formatBytes, langColor } from '../api';
+  import { formatBytes, langColor, deleteDirectory } from '../api';
   import type { Directory, File, TreeNode } from '../types';
+  import SubDirNode from './SubDirNode.svelte';
+  import DirFile from './DirFile.svelte';
+  import { toast } from "svelte-sonner";
 
   export let node: TreeNode;
   export let expanded: Set<string>;
   export let dirFiles: Record<string, File[] | undefined>;
   export let onToggle: (dir: Directory) => void;
-  export let onDelete: (prefix: string, e: MouseEvent) => void;
+  export let onDelete: (prefix: string) => void;
   export let onDeliver: (prefix: string) => void;
   export let onFileSelect: (f: File) => void;
+  export let onFileDownload: (f: File, e: MouseEvent) => void;
+  export let onFileDelete: (f: File) => void;
   export let depth: number;
 
   $: isExpanded = node.dir ? expanded.has(node.dir.prefix) : false;
-  $: files = node.dir ? (dirFiles[node.dir.prefix] ?? null) : null;
+  // Only show files directly in this dir, not in any subdirectory.
+  // e.g. for prefix "dev/", file "dev/go/main.go" has a sub-segment after stripping
+  // the prefix ("go/main.go") so it belongs to a child node, not here.
+  function directFiles(allFiles: File[] | null | undefined, prefix: string): File[] | null {
+    if (allFiles == null) return null;
+    return allFiles.filter(f => {
+      const relative = f.path.startsWith(prefix) ? f.path.slice(prefix.length) : f.file_name;
+      return !relative.includes('/');
+    });
+  }
+  $: files = node.dir ? directFiles(dirFiles[node.dir.prefix], node.dir.prefix) : null;
   $: hasChildren = node.children.length > 0;
   $: isExpandable = hasChildren || node.dir != null;
 
@@ -27,6 +42,38 @@
 
   let virtualOpen = false;
   $: isOpen = node.dir ? isExpanded : virtualOpen;
+
+  const handleDirDelete = (prefix: string, e: MouseEvent) => {
+    e.stopPropagation();
+    onDelete(prefix);
+  }
+
+  async function handleSubDelete(prefix: string) {
+    toast(`Delete directory "${prefix}"?`, {
+      action: {
+        label: "Confirm",
+        onClick: async () => {
+          try {
+            await deleteDirectory(prefix);
+            if (node.children) {
+              node.children = node.children.filter((child) => child.dir?.prefix !== prefix);
+            }
+            toast.success(`Deleted directory "${prefix}"`);
+          } catch (e: unknown) {
+            toast.error((e as Error).message);
+            console.error(e);
+          }
+        },
+      },
+    });
+  }
+
+  const handleFileDelete = (file: File) => {
+    if (files) {
+      files = files.filter((f) => f.id !== file.id);
+    }
+    onFileDelete(file);
+  }
 </script>
 
 <div class="node">
@@ -82,7 +129,7 @@
       <button
         class="na-btn danger"
         title="Delete directory"
-        on:click={(e) => onDelete(node.dir.prefix, e)}
+        on:click={(e) => handleDirDelete(node.dir.prefix, e)}
       >
         <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
           <path d="M3 4h10M6 4V3h4v1M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
@@ -94,17 +141,19 @@
 
 <!-- Expanded children -->
 {#if isOpen}
-  <!-- Child directories -->
+  <!-- Child sub-directories -->
   {#if hasChildren}
     {#each node.children as child}
-      <svelte:self
+      <SubDirNode
         node={child}
         {expanded}
         {dirFiles}
         {onToggle}
-        {onDelete}
+        onDelete={handleSubDelete}
         {onDeliver}
         {onFileSelect}
+        {onFileDownload}
+        {onFileDelete}
         depth={depth + 1}
       />
     {/each}
@@ -122,33 +171,13 @@
       </div>
     {:else}
       {#each files as file}
-        <button
-          class="file-row"
-          style="padding-left: {14 + (depth + 1) * INDENT}px"
-          on:click={() => onFileSelect(file)}
-        >
-          <!-- File icon -->
-          <svg viewBox="0 0 14 14" fill="none" width="12" height="12" class="file-icon">
-            <path d="M3 1h5l3 3v9H3V1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-            <path d="M8 1v3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-
-          <span class="file-name">{file.file_name}</span>
-
-          {#if file.language}
-            <span class="file-lang" style="--c:{langColor(file.language)}">{file.language}</span>
-          {/if}
-
-          {#if file.tags && file.tags.length > 0}
-            <div class="file-tags">
-              {#each file.tags.slice(0, 3) as tag}
-                <span class="ftag">#{tag}</span>
-              {/each}
-            </div>
-          {/if}
-
-          <span class="file-size">{formatBytes(file.size)}</span>
-        </button>
+        <DirFile
+          {file}
+          paddingLeft={14 + (depth + 1) * INDENT}
+          {onFileSelect}
+          onDownload={onFileDownload}
+          on:deleted={() => handleFileDelete(file)}
+        />
       {/each}
     {/if}
   {/if}
@@ -169,7 +198,7 @@
    even when the container is wider than the row's natural width.
 --------------------------------------------------------------- */
 .node-row {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 8px;
   width: 100%;
   min-width: 100%;        /* fills horizontal scroll width */
   background: none; border: none;
@@ -236,7 +265,7 @@
   width: 100%;
   min-width: 100%;        /* fills horizontal scroll width */
   background: none; border: none;
-  padding-top: 7px; padding-bottom: 7px; padding-right: 14px;
+  padding-top: 8px; padding-bottom: 8px; padding-right: 14px;
   cursor: pointer; text-align: left;
   border-top: 1px solid var(--border);
   transition: background 0.1s;

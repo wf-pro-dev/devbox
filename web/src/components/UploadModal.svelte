@@ -17,9 +17,10 @@
   let error = '';
   let dragOver = false;
 
-  // Directory picker
+  // Directory combobox
   let dirs: Directory[] = [];
-  let selectedDir = ''; // bound to the select — holds the prefix string
+  let prefixInput = '';
+  let showSuggestions = false;
 
   onMount(async () => {
     try {
@@ -29,8 +30,19 @@
     }
   });
 
-  // Keep prefix in sync with the dropdown selection
-  $: prefix = selectedDir;
+  $: prefix = prefixInput.trim();
+  $: suggestions = prefixInput
+    ? dirs.filter(d => d.prefix.toLowerCase().includes(prefixInput.toLowerCase()))
+    : dirs;
+
+  function selectSuggestion(p: string) {
+    prefixInput = p;
+    showSuggestions = false;
+  }
+
+  function onPrefixKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') showSuggestions = false;
+  }
 
 
   const LANGUAGES = [
@@ -134,15 +146,39 @@
         <span>Tags <em>(comma separated)</em></span>
         <input type="text" placeholder="bash, deploy, prod" bind:value={tags} />
       </label>
-      <label class="field">
-        <span>Directory <em>(optional)</em></span>
-        <select bind:value={selectedDir}>
-          <option value="">— root (no directory) —</option>
-          {#each dirs as dir}
-            <option value={dir.prefix}>{dir.prefix}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="field">
+        <span>Directory <em>(optional — type freely or pick from list)</em></span>
+        <div class="prefix-combobox">
+          <input
+            type="text"
+            placeholder="e.g. devbox-web/components/"
+            bind:value={prefixInput}
+            on:focus={() => (showSuggestions = true)}
+            on:blur={() => setTimeout(() => (showSuggestions = false), 120)}
+            on:keydown={onPrefixKeydown}
+          />
+          {#if showSuggestions && suggestions.length > 0}
+            <ul class="suggestions">
+              {#if prefixInput}
+                <li class="suggestion hint-item" on:mousedown={() => selectSuggestion('')}>
+                  <span class="sug-prefix muted">— root (no directory) —</span>
+                </li>
+              {/if}
+              {#each suggestions as dir}
+                <li class="suggestion" on:mousedown={() => selectSuggestion(dir.prefix)}>
+                  <svg viewBox="0 0 14 14" fill="none" width="11" height="11" class="sug-icon">
+                    <path d="M1 4a1 1 0 011-1h2.5l1 1H12a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V4z" stroke="currentColor" stroke-width="1.2"/>
+                  </svg>
+                  <span class="sug-prefix">{dir.prefix}</span>
+                  {#if dir.file_count != null}
+                    <span class="sug-count">{dir.file_count} file{dir.file_count !== 1 ? 's' : ''}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      </div>
       <label class="field">
         <span>Language <em>(optional — auto-detected)</em></span>
         <select bind:value={language}>
@@ -226,6 +262,27 @@
   .fields { display: flex; flex-direction: column; gap: 12px; padding: 0 20px 16px; }
   .field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-2); }
   .field em { color: var(--text-3); font-style: normal; }
+  .prefix-combobox { position: relative; }
+  .prefix-combobox input { width: 100%; box-sizing: border-box; }
+
+  .suggestions {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: white; border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    list-style: none; margin: 0; padding: 4px 0;
+    max-height: 180px; overflow-y: auto; z-index: 50;
+  }
+  .suggestion {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 10px; cursor: pointer; font-size: 12px;
+    transition: background 0.1s;
+  }
+  .suggestion:hover { background: var(--bg-2); }
+  .sug-icon { flex-shrink: 0; color: var(--text-3); }
+  .sug-prefix { font-family: var(--mono); color: var(--text); flex: 1; }
+  .sug-prefix.muted { color: var(--text-3); font-style: italic; }
+  .sug-count { font-size: 10.5px; color: var(--text-3); flex-shrink: 0; }
+
   .field input, .field select {
     height: 34px; padding: 0 10px; border: 1px solid var(--border);
     border-radius: var(--radius); font-size: 13px; background: var(--bg); outline: none;

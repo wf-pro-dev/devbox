@@ -157,7 +157,7 @@
           Destination directory
           <input
             type="text"
-            placeholder="~/devbox-received"
+            placeholder="/home/will"
             bind:value={destDir}
           />
         </label>

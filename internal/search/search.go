@@ -6,38 +6,6 @@ package search
 import (
 	"context"
 	"database/sql"
-
-	"github.com/wf-pro-dev/devbox/internal/db"
-)
-
-type Searcher struct {
-	sqlDB *sql.DB
-}
-
-func New(sqlDB *sql.DB) *Searcher {
-	return &Searcher{sqlDB: sqlDB}
-}
-
-type Results struct {
-	Files []db.File `json:"files"`
-}
-
-func (s *Searcher) Search(ctx context.Context, query string) (*Results, error) {
-	return nil, nil
-}
-
-func (s *Searcher) SearchFiles(ctx context.Context, query string) ([]db.File, error) {
-	return nil, nil
-}
-
-func (s *Searcher) IndexFileContent(ctx context.Context, fileID, content string) error {
-	return nil
-}
-
-/*
-import (
-	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
@@ -54,34 +22,16 @@ func New(sqlDB *sql.DB) *Searcher {
 }
 
 // Results holds combined search results.
-type Results struct {
-	Files       []db.File       `json:"files"`
-	Collections []db.Collection `json:"collections"`
-}
-
-// Search runs a combined search over files (FTS5) and collections (LIKE).
-// query is the user-supplied search term.
-func (s *Searcher) Search(ctx context.Context, query string) (*Results, error) {
-	files, err := s.searchFiles(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	cols, err := s.searchCollections(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	return &Results{Files: files, Collections: cols}, nil
-}
 
 // SearchFiles runs an FTS5 MATCH query over files.
-func (s *Searcher) SearchFiles(ctx context.Context, query string) ([]db.File, error) {
+func (s *Searcher) Search(ctx context.Context, query string) ([]db.File, error) {
 	return s.searchFiles(ctx, query)
 }
 
 func (s *Searcher) searchFiles(ctx context.Context, query string) ([]db.File, error) {
 	const q = `
-		SELECT f.id, f.path, f.file_name, f.collection_id, f.description,
-		       f.language, f.size, f.blob_sha256, f.uploaded_by,
+		SELECT f.id, f.path, f.file_name, f.description,
+		       f.language, f.size, f.sha256, f.uploaded_by,
 		       f.version, f.created_at, f.updated_at
 		FROM files f
 		JOIN files_fts fts ON fts.file_id = f.id
@@ -98,8 +48,8 @@ func (s *Searcher) searchFiles(ctx context.Context, query string) ([]db.File, er
 	for rows.Next() {
 		var f db.File
 		if err := rows.Scan(
-			&f.ID, &f.Path, &f.FileName, &f.CollectionID,
-			&f.Description, &f.Language, &f.Size, &f.BlobSha256,
+			&f.ID, &f.Path, &f.FileName,
+			&f.Description, &f.Language, &f.Size, &f.Sha256,
 			&f.UploadedBy, &f.Version, &f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)
@@ -107,34 +57,6 @@ func (s *Searcher) searchFiles(ctx context.Context, query string) ([]db.File, er
 		files = append(files, f)
 	}
 	return files, rows.Err()
-}
-
-func (s *Searcher) searchCollections(ctx context.Context, query string) ([]db.Collection, error) {
-	const q = `
-		SELECT id, name, prefix, description, uploaded_by, created_at, updated_at
-		FROM collections
-		WHERE name LIKE ? OR description LIKE ?
-		ORDER BY name`
-
-	like := "%" + query + "%"
-	rows, err := s.sqlDB.QueryContext(ctx, q, like, like)
-	if err != nil {
-		return nil, fmt.Errorf("search collections: %w", err)
-	}
-	defer rows.Close()
-
-	var cols []db.Collection
-	for rows.Next() {
-		var c db.Collection
-		if err := rows.Scan(
-			&c.ID, &c.Name, &c.Prefix, &c.Description,
-			&c.UploadedBy, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan collection: %w", err)
-		}
-		cols = append(cols, c)
-	}
-	return cols, rows.Err()
 }
 
 // IndexFileContent updates the FTS content field for a file.
@@ -146,4 +68,3 @@ func (s *Searcher) IndexFileContent(ctx context.Context, fileID, content string)
 	)
 	return err
 }
-*/

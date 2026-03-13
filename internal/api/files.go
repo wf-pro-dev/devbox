@@ -44,7 +44,7 @@ func (h *filesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	// FTS is a separate code path — cannot be expressed as a SQL filter.
 	if fts := q.Get("q"); fts != "" {
-		files, err := h.searcher.SearchFiles(ctx, fts)
+		files, err := h.searcher.Search(ctx, fts)
 		if err != nil {
 			jsonError(w, "search failed", http.StatusInternalServerError)
 			log.Printf("search files: %v", err)

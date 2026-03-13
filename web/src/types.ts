@@ -18,7 +18,6 @@ export interface Blob {
     version: number;
     created_at: string;
     updated_at: string;
-    // Enriched by the API layer (not in DB model, added by list handlers)
     tags?: string[];
   }
   
@@ -83,8 +82,6 @@ export interface Blob {
   
   // Virtual directory — resolved from path prefix on the server
   export interface Directory {
-    // The server exposes dirs as path-prefix groups; shape depends on your
-    // actual handler response. These are the commonly-used fields:
     id: string;         // synthetic ID / path prefix
     name: string;       // last path segment
     prefix: string;     // full path prefix, e.g. "scripts/deploy/"
