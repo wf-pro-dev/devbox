@@ -2,9 +2,7 @@ services:
 
   # ── Go backend — API + Tailscale ────────────────────────────────────────
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: wwwill-1.lab:5000/devbox/backend:latest
     container_name: devbox-backend
     restart: unless-stopped
     networks:
@@ -36,9 +34,7 @@ services:
 
   # ── Svelte frontend — Nginx ──────────────────────────────────────────────
   ui:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
+    image: wwwill-1.lab:5000/devbox/ui:latest
     container_name: devbox-ui
     restart: unless-stopped
     networks:

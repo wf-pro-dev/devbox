@@ -190,7 +190,6 @@
       on:selectTag={(e) => selectTag(e.detail)}
       on:selectFile={(e) => {
         previewFile = e.detail;
-        activeMainTab = "files";
       }}
     />
 
@@ -213,7 +212,6 @@
         <DirectoriesTab
           onFileSelect={(f) => {
             previewFile = f;
-            activeMainTab = "files";
           }}
 
           onFileDelete={(f) => {

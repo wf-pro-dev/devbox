@@ -16,10 +16,6 @@ ts-state/
 
 # ─── Go ──────────────────────────────────────────────────────
 # Binaries
-/devbox
-/devbox-cli
-cmd/devbox/devbox
-cmd/devbox-cli/devbox-cli
 bin/
 *.exe
 *.exe~
