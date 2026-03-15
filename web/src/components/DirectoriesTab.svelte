@@ -28,6 +28,7 @@
     error = "";
     try {
       dirs = await listDirectories();
+      dirs = dirs.sort((a, b) => b.prefix.localeCompare(a.prefix));
     } catch (e: unknown) {
       error = (e as Error).message;
     } finally {
@@ -206,7 +207,7 @@
     return root;
   }
 
-  $: tree = buildTree(dirs.sort((a, b) => b.prefix.localeCompare(a.prefix)));
+  $: tree = buildTree(dirs);
 </script>
 
 <div class="dirs-tab">

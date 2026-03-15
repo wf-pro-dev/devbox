@@ -19,7 +19,10 @@
   onMount(async () => {
     try {
       peers = await listPeers();
-    } catch {
+      peers = peers.sort((a, b) => a.hostname.localeCompare(b.hostname));
+      console.log(peers);
+    } catch (e: unknown) {
+      console.error(e);
       peers = [];
     } finally {
       peersLoading = false;

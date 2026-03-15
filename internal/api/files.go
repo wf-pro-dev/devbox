@@ -78,7 +78,7 @@ func (h *filesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		ids[i] = f.ID
 	}
 
-	var files []types.File
+	var files []types.File = []types.File{}
 	tagMap := buildTagMap(ctx, h.store.Queries, ids)
 	for _, f := range fs {
 		files = append(files, types.File{File: f, Tags: tagMap[f.ID]})
@@ -683,7 +683,7 @@ func detectLanguage(filename string) string {
 	case ".rb":
 		return "ruby"
 	default:
-		if strings.EqualFold(filepath.Base(filename), "Dockerfile") {
+		if strings.HasPrefix(filepath.Base(filename), "Dockerfile") {
 			return "dockerfile"
 		}
 		return "text"

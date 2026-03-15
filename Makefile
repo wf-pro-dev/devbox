@@ -1,6 +1,7 @@
 .PHONY: build build-cli build-all build-web generate run run-web test clean tidy install docker-build docker-up docker-down docker-logs-backend docker-logs-ui docker-restart docker-deploy
 
 BUILD_TAGS := -tags fts5
+DOCKER_COMPOSE_FILE := docker/docker-compose.yml
 
 ## Generate sqlc Go code
 generate:
@@ -51,28 +52,28 @@ clean:
 
 ## Build the Docker image
 docker-build:
-	docker compose build
+	docker compose -f $(DOCKER_COMPOSE_FILE) build
 
 ## Start devbox in the background
 docker-up:
-	docker compose up -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 
 ## Stop devbox
 docker-down:
-	docker compose down
+	docker compose -f $(DOCKER_COMPOSE_FILE) down
 
 ## Tail logs
 docker-logs-backend:
-	docker compose logs -f devbox-backend
+	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f devbox-backend
 
 docker-logs-ui:
-	docker compose logs -f devbox-ui
+	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f devbox-ui
 
 ## Restart the container (e.g. after a config change)
 docker-restart:
-	docker compose restart devbox-backend
-	docker compose restart devbox-ui
+	docker compose -f $(DOCKER_COMPOSE_FILE) restart devbox-backend
+	docker compose -f $(DOCKER_COMPOSE_FILE) restart devbox-ui
 
 ## Rebuild image and restart (full redeploy)
 docker-deploy:
-	docker compose build && docker compose up -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) build && docker compose -f $(DOCKER_COMPOSE_FILE) up -d

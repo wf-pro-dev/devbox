@@ -23,7 +23,7 @@ FROM alpine:3.19
 RUN apk add --no-cache ca-certificates tzdata openssh-client
 RUN addgroup -S devbox && adduser -S devbox -G devbox
 
-COPY --from=go-builder /bin/devbox /usr/local/bin/devbox
+COPY --from=go-builder bin/devbox /usr/local/bin/devbox
 
 RUN mkdir -p /data && chown devbox:devbox /data
 

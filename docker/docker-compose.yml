@@ -2,13 +2,11 @@ services:
 
   # ── Go backend — API + Tailscale ────────────────────────────────────────
   backend:
-    image: wwwill-1.lab:5000/devbox/backend:latest
+    image: wwwill-1.lab:5000/devbox/backend:${DEVBOX_BACKEND_VERSION:-latest}
     container_name: devbox-backend
     restart: unless-stopped
     networks:
       - devbox-net
-    ports:
-      - "5174:8888"
     environment:
       TS_AUTHKEY:          ${TS_AUTHKEY}
       DEVBOX_HOSTNAME:     ${DEVBOX_HOSTNAME:-devbox}
@@ -34,13 +32,13 @@ services:
 
   # ── Svelte frontend — Nginx ──────────────────────────────────────────────
   ui:
-    image: wwwill-1.lab:5000/devbox/ui:latest
+    image: wwwill-1.lab:5000/devbox/ui:${DEVBOX_UI_VERSION:-latest}
     container_name: devbox-ui
     restart: unless-stopped
     networks:
       - devbox-net
     ports:
-      - "5173:80"
+      - "80:80"
     depends_on:
       - backend
 
