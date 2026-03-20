@@ -3,12 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/wf-pro-dev/devbox/tailkit"
+	tailkit "github.com/wf-pro-dev/tailkit"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -23,14 +21,14 @@ func newSetupCmd() *cobra.Command {
 }
 
 func runSetup() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("could not resolve binary path: %w", err)
-	}
-	bin, err := filepath.EvalSymlinks(exe)
-	if err != nil {
-		bin = exe
-	}
+	// exe, err := os.Executable()
+	// if err != nil {
+	// 	return fmt.Errorf("could not resolve binary path: %w", err)
+	// }
+	// // bin, err := filepath.EvalSymlinks(exe)
+	// // if err != nil {
+	// // 	bin = exe
+	// // }
 
 	tool := tailkit.Tool{
 		Name:      "devbox",

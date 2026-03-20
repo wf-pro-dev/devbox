@@ -8,7 +8,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.10.2
-	github.com/wf-pro-dev/tailkit v0.0.0-20260319044953-b823f748c6d8
+	github.com/wf-pro-dev/tailkit v0.1.0
 )
 
 require (
