@@ -2,21 +2,45 @@ package internal
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/schollz/progressbar/v3"
+	"github.com/wf-pro-dev/devbox/internal/progress"
 )
 
 var serverURL string
 
 func Client() *http.Client {
 	return &http.Client{Timeout: 60 * time.Second}
+}
+
+func ProgressClient(p *progress.Progress) *http.Client {
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+				return &progress.ConnReader{
+					Conn:    conn,
+					OnWrite: p.Increment,
+				}, nil
+			},
+		},
+	}
 }
 
 func Server() string {
@@ -85,11 +109,6 @@ func PatchJSON(url string, body any) (*http.Response, error) {
 // uploadFile sends a multipart POST with one file and optional string fields.
 // fields is a map of form field name → value.
 func UploadFile(url, localPath string, fields map[string]string) (*http.Response, error) {
-	f, err := os.Open(localPath)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", localPath, err)
-	}
-	defer f.Close()
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -100,18 +119,55 @@ func UploadFile(url, localPath string, fields map[string]string) (*http.Response
 		}
 	}
 
-	part, err := mw.CreateFormFile("file", filepath.Base(localPath))
+	multipartWriter, err := mw.CreateFormFile("file", filepath.Base(localPath))
 	if err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(part, f); err != nil {
+
+	fileContent, err := os.Open(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", localPath, err)
+	}
+	defer fileContent.Close()
+
+	ctx := context.Background()
+	progresManager := progress.GetManager(ctx)
+
+	fileInfo, err := fileContent.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", localPath, err)
+	}
+	totalSize := fileInfo.Size()
+
+	if _, err := io.Copy(multipartWriter, fileContent); err != nil {
 		return nil, err
 	}
+
 	mw.Close()
 
-	resp, err := Client().Post(url, mw.FormDataContentType(), &buf)
+	connID := uuid.New().String()
+	connProgress := progresManager.Create(connID, totalSize)
+	defer progresManager.Remove(connID)
+
+	connBar := progressbar.New64(totalSize)
+
+	connProgress.OnProgress(func(progress *progress.Progress) {
+		snapshot := progress.Snapshot()
+
+		if snapshot.Current >= totalSize {
+			connBar.Finish()
+		} else {
+			connBar.Set64(snapshot.Current)
+		}
+	})
+
+	resp, err := ProgressClient(connProgress).Post(url, mw.FormDataContentType(), &buf)
 	if err != nil {
 		return nil, fmt.Errorf("POST %s: %w", url, err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("POST %s: %s", url, resp.Status)
 	}
 	return resp, nil
 }

@@ -9,6 +9,11 @@ import (
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
 )
 
+// version is stamped at build time:
+//
+//	go build -ldflags="-X github.com/wf-pro-dev/devbox/cmd/devbox-cli/cmd.version=v1.2.3"
+var version = "dev"
+
 var serverURL string
 
 var rootCmd = &cobra.Command{
@@ -40,4 +45,5 @@ func init() {
 	rootCmd.AddCommand(files.NewCmd())
 	rootCmd.AddCommand(dirs.NewCmd())
 	rootCmd.AddCommand(newPeersCmd())
+	rootCmd.AddCommand(newSetupCmd())
 }

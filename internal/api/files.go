@@ -119,6 +119,7 @@ func (h *filesHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-File-Path", file.Path)
 	w.Header().Set("X-File-SHA256", file.Sha256)
 	w.Header().Set("X-File-Version", strconv.FormatInt(file.Version, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(file.Size, 10))
 
 	if _, err := io.Copy(w, blob); err != nil {
 		log.Printf("stream blob %s: %v", file.ID, err)

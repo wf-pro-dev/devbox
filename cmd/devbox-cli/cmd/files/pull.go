@@ -3,12 +3,14 @@ package files
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
 	"github.com/wf-pro-dev/devbox/internal/db"
@@ -29,7 +31,10 @@ func PullCmd() *cobra.Command {
   devbox-cli files pull deploy.sh --version 2`,
 		RunE: func(c *cobra.Command, args []string) error {
 			id := args[0]
-			u := internal.Server() + "/files/" + url.PathEscape(id)
+			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/files/%s", internal.Server(), url.PathEscape(id)), nil)
+			if err != nil {
+				return err
+			}
 			if version > 0 {
 				// Pull a specific version: get the version's sha256 from metadata,
 				// then download the blob via the rollback sha. For now we stream
@@ -67,7 +72,7 @@ func PullCmd() *cobra.Command {
 				}
 			}
 
-			resp, err := http.Get(u)
+			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("download: %w", err)
 			}
@@ -98,7 +103,17 @@ func PullCmd() *cobra.Command {
 			}
 			defer f.Close()
 
-			n, err := io.Copy(f, resp.Body)
+			contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid content length: %w", err)
+			}
+
+			log.Println("Downloading file", "size", contentLength)
+			bar := progressbar.DefaultBytes(
+				contentLength,
+				"Downloading file",
+			)
+			n, err := io.Copy(io.MultiWriter(f, bar), resp.Body)
 			if err != nil {
 				return fmt.Errorf("write: %w", err)
 			}

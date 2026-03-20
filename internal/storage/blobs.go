@@ -93,7 +93,7 @@ func (bs *BlobStore) Write(ctx context.Context, r io.Reader) (WriteResult, error
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("create blob file: %w", err)
 	}
-	if _, err := compressTo(dst, src); err != nil {
+	if _, err := CompressTo(dst, src); err != nil {
 		dst.Close()
 		os.Remove(finalPath)
 		return WriteResult{}, fmt.Errorf("compress blob: %w", err)
@@ -124,7 +124,7 @@ func (bs *BlobStore) Open(sha256hex string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open blob %s: %w", sha256hex[:8], err)
 	}
-	dec, err := decompressFrom(f)
+	dec, err := DecompressFrom(f)
 	if err != nil {
 		f.Close()
 		return nil, fmt.Errorf("decompress blob: %w", err)

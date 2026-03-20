@@ -3,25 +3,30 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	tailkit "github.com/wf-pro-dev/tailkit"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/storage"
 	"github.com/wf-pro-dev/devbox/internal/transfer"
 	"github.com/wf-pro-dev/devbox/types"
-	"tailscale.com/client/local"
 )
 
+// sendHandler handles file and directory delivery to tailnet peers via tailkitd.
+//
+// The lc *local.Client field is gone. Everything flows through *tailkit.Server:
+//   - Peer discovery uses srv.Server.LocalClient().Status(ctx)
+//   - The tsnet dialler for reaching tailkitd is srv.Server.Dial
 type sendHandler struct {
 	store *storage.Store
 	blobs *storage.BlobStore
-	lc    *local.Client
+	srv   *tailkit.Server
 }
 
-// ── POST /files/{id}/send ──────────────────────────────────────────────────────
+// ── POST /files/{id}/send ─────────────────────────────────────────────────────
 
 func (h *sendHandler) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -49,27 +54,19 @@ func (h *sendHandler) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		destDir = "~/devbox-received"
 	}
 
-	results := transfer.Send(ctx, h.lc, transfer.SendPackage{
-		FileID:   file.ID,
-		FileName: file.FileName,
-		BlobPath: h.blobs.Path(file.Sha256),
-		Targets:  targets,
-		DestDir:  destDir,
+	results := transfer.Send(ctx, h.srv, transfer.SendPackage{
+		FileID:     file.ID,
+		FileName:   file.FileName,
+		BlobSha256: file.Sha256,
+		BlobPath:   h.blobs.Path(file.Sha256),
+		Targets:    targets,
+		DestDir:    destDir,
 	})
 
-	resp := make([]types.SendResult, len(results))
-	for i, res := range results {
-		resp[i] = types.SendResult{Target: res.Target, Success: res.Err == nil}
-		if res.Err != nil {
-			resp[i].Error = res.Err.Error()
-		}
-	}
-	jsonOK(w, map[string]any{"results": resp})
+	jsonOK(w, results)
 }
 
-// ── POST /dirs/{dir}/deliver ──────────────────────────────────────────────────
-// Delivers all files under the prefix to the target machines, preserving the
-// relative subdirectory structure under dest_dir.
+// ── POST /dirs/{dir}/send ─────────────────────────────────────────────────────
 
 func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -99,8 +96,8 @@ func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type fileDelivery struct {
-		Path    string             `json:"path"`
-		Results []types.SendResult `json:"results"`
+		Path    string               `json:"path"`
+		Results []tailkit.SendResult `json:"results"`
 	}
 
 	var allResults []fileDelivery
@@ -111,35 +108,32 @@ func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 			destDir = baseDir + "/" + dir
 		}
 
-		results := transfer.Send(ctx, h.lc, transfer.SendPackage{
-			FileID:   f.ID,
-			FileName: f.FileName,
-			BlobPath: h.blobs.Path(f.Sha256),
-			Targets:  targets,
-			DestDir:  destDir,
+		results := transfer.Send(ctx, h.srv, transfer.SendPackage{
+			FileID:     f.ID,
+			FileName:   f.FileName,
+			BlobSha256: f.Sha256,
+			BlobPath:   h.blobs.Path(f.Sha256),
+			Targets:    targets,
+			DestDir:    destDir,
 		})
 
-		dr := make([]types.SendResult, len(results))
-		for i, res := range results {
-			dr[i] = types.SendResult{Target: res.Target, Success: res.Err == nil}
-			if res.Err != nil {
-				dr[i].Error = res.Err.Error()
-				log.Printf("deliver %s -> %s: %v", f.Path, res.Target, res.Err)
-			}
-		}
-		allResults = append(allResults, fileDelivery{Path: f.Path, Results: dr})
+		allResults = append(allResults, fileDelivery{Path: f.Path, Results: results})
 	}
 
-	jsonOK(w, map[string]any{
-		"prefix":  prefix,
-		"results": allResults,
-	})
+	jsonOK(w, map[string]any{"prefix": prefix, "results": allResults})
 }
 
 // ── GET /peers ────────────────────────────────────────────────────────────────
 
 func (h *sendHandler) handleListPeers(w http.ResponseWriter, r *http.Request) {
-	status, err := h.lc.Status(r.Context())
+	// Peer discovery via the tailkit server's embedded tsnet LocalClient.
+	lc, err := h.srv.Server.LocalClient()
+	if err != nil {
+		jsonError(w, "could not get local client", http.StatusInternalServerError)
+		return
+	}
+
+	status, err := lc.Status(r.Context())
 	if err != nil {
 		jsonError(w, "could not list tailnet peers", http.StatusInternalServerError)
 		return
@@ -168,16 +162,25 @@ func (h *sendHandler) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, peers)
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+// resolveTargets returns the list of target hostnames.
+// When Broadcast is true all online tailnet peers are included.
+// Peer discovery uses the tailkit server's LocalClient — no separate lc field.
 func (h *sendHandler) resolveTargets(ctx context.Context, req types.SendRequest) ([]string, error) {
 	if !req.Broadcast {
 		return req.Targets, nil
 	}
-	status, err := h.lc.Status(ctx)
+
+	lc, err := h.srv.Server.LocalClient()
 	if err != nil {
 		return nil, err
 	}
+	status, err := lc.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var targets []string
 	for _, p := range status.Peer {
 		if !p.Online {

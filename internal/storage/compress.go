@@ -15,8 +15,8 @@ var zstdEncoder, _ = zstd.NewWriter(nil,
 // zstdDecoder is a package-level decoder reused across reads (thread-safe).
 var zstdDecoder, _ = zstd.NewReader(nil)
 
-// compressTo compresses src into dst using zstd and returns bytes written.
-func compressTo(dst io.Writer, src io.Reader) (int64, error) {
+// CompressTo compresses src into dst using zstd and returns bytes written.
+func CompressTo(dst io.Writer, src io.Reader) (int64, error) {
 	enc, err := zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	if err != nil {
 		return 0, fmt.Errorf("zstd writer: %w", err)
@@ -32,9 +32,9 @@ func compressTo(dst io.Writer, src io.Reader) (int64, error) {
 	return n, nil
 }
 
-// decompressFrom wraps src in a zstd decoder and returns it as an io.ReadCloser.
+// DecompressFrom wraps src in a zstd decoder and returns it as an io.ReadCloser.
 // The caller must close the returned reader.
-func decompressFrom(src io.Reader) (io.ReadCloser, error) {
+func DecompressFrom(src io.Reader) (io.ReadCloser, error) {
 	dec, err := zstd.NewReader(src)
 	if err != nil {
 		return nil, fmt.Errorf("zstd reader: %w", err)
