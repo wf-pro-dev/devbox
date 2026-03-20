@@ -2,11 +2,11 @@
 # install.sh — installs devbox-cli from GitHub Releases
 #
 # Usage:
-#   curl -fsSL https://github.com/wf-pro-dev/tailkitd/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
 
 set -e
 
-REPO="wf-pro-dev/tailkitd"
+REPO="wf-pro-dev/devbox"
 BINARY_NAME="devbox-cli"
 INSTALL_DIR="/usr/local/bin"
 
@@ -101,7 +101,7 @@ fi
 echo ""
 echo "  devbox-cli ${VERSION} installed successfully."
 echo ""
-echo "  Next step — register this node with tailkitd:"
+echo "  Next step — register devbox-cli in tailkitd:"
 echo ""
 echo "    devbox-cli setup"
 echo ""
