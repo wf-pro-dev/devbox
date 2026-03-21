@@ -51,7 +51,7 @@ func (h *sendHandler) handleSendFile(w http.ResponseWriter, r *http.Request) {
 
 	destDir := req.DestDir
 	if destDir == "" {
-		destDir = "~/devbox-received"
+		destDir = transfer.DEFAULT_DEST_DIR
 	}
 
 	results := transfer.Send(ctx, h.srv, transfer.SendPackage{
@@ -92,7 +92,7 @@ func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 
 	baseDir := req.DestDir
 	if baseDir == "" {
-		baseDir = "~/devbox-received/" + strings.TrimSuffix(prefix, "/")
+		baseDir = transfer.DEFAULT_DEST_DIR + strings.TrimSuffix(prefix, "/")
 	}
 
 	type fileDelivery struct {

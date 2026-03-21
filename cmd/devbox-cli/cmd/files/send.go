@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/devbox/types"
+	"github.com/wf-pro-dev/tailkit"
 )
 
 func SendCmd() *cobra.Command {
@@ -15,12 +15,12 @@ func SendCmd() *cobra.Command {
 	var all bool
 
 	c := &cobra.Command{
-		Use:   "send <id|path>",
+		Use:   "send <id|filename>",
 		Short: "Deliver a file to one or more peers via Tailscale",
 		Args:  cobra.ExactArgs(1),
-		Example: `  devbox-cli files deliver deploy.sh --to myhost
-  devbox-cli files deliver deploy.sh --to host1,host2 --dest /opt/scripts
-  devbox-cli files deliver deploy.sh --all`,
+		Example: `  devbox-cli files send deploy.sh --to myhost
+  devbox-cli files send deploy.sh --to host1,host2 --dest /opt/scripts
+  devbox-cli files send deploy.sh --all`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if !all && to == "" {
 				return fmt.Errorf("specify --to <host> or --all")
@@ -44,18 +44,17 @@ func SendCmd() *cobra.Command {
 				body["targets"] = targets
 			}
 
+			fmt.Printf("\nSending %s (%s) to %s :\n", f.FileName, internal.ShortID(f.ID), to)
 			u := internal.Server() + "/files/" + url.PathEscape(f.ID) + "/send"
 			resp, err := internal.PostJSON(u, body)
 			if err != nil {
 				return err
 			}
-			var result struct {
-				Results []types.SendResult `json:"results"`
-			}
-			if err := internal.Decode(resp, &result); err != nil {
+			var results []tailkit.SendResult
+			if err := internal.Decode(resp, &results); err != nil {
 				return err
 			}
-			printSendResults(f.Path, result.Results)
+			printResults(results)
 			return nil
 		},
 	}
@@ -65,16 +64,19 @@ func SendCmd() *cobra.Command {
 	return c
 }
 
-func printSendResults(label string, results []types.SendResult) {
+func printResults(results []tailkit.SendResult) {
 	ok, fail := 0, 0
-	for _, r := range results {
-		if r.Success {
+	fmt.Println()
+	for _, result := range results {
+
+		if result.Success {
+			fmt.Printf("    - %s: ok \n", result.DestMachine)
 			ok++
-			fmt.Printf("  ok   %s -> %s\n", label, r.Target)
 		} else {
+			fmt.Printf("    - %s: fail \n", result.DestMachine)
 			fail++
-			fmt.Printf("  fail %s -> %s: %s\n", label, r.Target, r.Error)
 		}
+
 	}
 	fmt.Printf("\n%d ok, %d failed\n", ok, fail)
 }

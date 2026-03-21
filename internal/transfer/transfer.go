@@ -24,6 +24,8 @@ import (
 	"github.com/wf-pro-dev/devbox/internal/storage"
 )
 
+const DEFAULT_DEST_DIR = "/var/lib/tailkitd/recv/"
+
 // SendPackage describes a single file delivery to one or more machines.
 type SendPackage struct {
 	FileID     string
@@ -46,9 +48,6 @@ type Result struct {
 //   - The tsnet Dial function for making authenticated connections through
 //     the tailnet without any extra ports or SSH keys
 func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.SendResult {
-	if pkg.DestDir == "" {
-		pkg.DestDir = "~/devbox-received"
-	}
 
 	peers, err := resolvePeers(ctx, srv)
 	if err != nil {
@@ -66,12 +65,11 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 			dnsName = target
 		}
 		res, err := sendViaTailkitd(ctx, srv, dnsName, pkg)
-		results = append(results, *res)
 		if err != nil {
 			log.Printf("transfer: deliver to %s failed: %v", target, err)
-		} else {
-			log.Printf("transfer: delivered %s to %s:%s", pkg.FileName, target, pkg.DestDir)
 		}
+		results = append(results, *res)
+
 	}
 	return results
 }
@@ -89,33 +87,43 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName string, pkg SendPackage) (*tailkit.SendResult, error) {
 	// Decompress the blob before sending — blobs are stored zstd-compressed
 	// by the BlobStore but tailkitd expects raw file bytes.
+
+	destPath := expandTilde(pkg.DestDir) + "/" + filepath.Base(pkg.FileName)
+	tailkitdHost := shortName(dnsName)
+
+	failResult := tailkit.SendResult{
+		LocalPath:   pkg.BlobPath,
+		WrittenTo:   destPath,
+		DestMachine: dnsName,
+		Success:     false,
+	}
+
 	body, err := readBlob(pkg.BlobPath)
 	if err != nil {
-		return nil, fmt.Errorf("read blob: %w", err)
+		return &failResult, nil
 	}
 
 	TEMP_DIR := os.TempDir()
 	tmp, err := os.CreateTemp(TEMP_DIR, ".tailkitd-recv-*")
 	if err != nil {
-		return nil, fmt.Errorf("create temp file in %s: %w", TEMP_DIR, err)
+		return &failResult, nil
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after successful rename
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) // no-op after successful rename
 
 	_, err = io.Copy(tmp, bytes.NewReader(body))
 	if err != nil {
 		_ = tmp.Close()
-		return nil, fmt.Errorf("write to temp file: %w", err)
+		return &failResult, nil
 	}
 
-	destPath := expandTilde(pkg.DestDir) + "/" + filepath.Base(pkg.FileName)
-	tailkitdHost := "tailkitd-" + shortName(dnsName)
 	res, err := tailkit.Node(srv, tailkitdHost).Send(ctx, tailkit.SendRequest{
-		LocalPath: fmt.Sprintf("%s/%s", TEMP_DIR, tmpName),
+		LocalPath: tmpPath,
 		DestPath:  destPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("send file: %w", err)
+
+		return &failResult, nil
 	}
 
 	return &res, nil

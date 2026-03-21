@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 	tailkit "github.com/wf-pro-dev/tailkit"
@@ -34,28 +33,6 @@ func runSetup() error {
 		Name:      "devbox",
 		Version:   version,
 		TsnetHost: "devbox",
-		Commands: []tailkit.Command{
-			{
-				Name:        "docker-compose-restart",
-				Description: "Restart a Docker Compose service by name",
-				ACLCap:      "devbox:docker-compose-restart",
-				ExecParts: []string{
-					"/usr/bin/docker",
-					"compose",
-					"restart",
-					"{{.service}}",
-				},
-				Timeout: 60 * time.Second,
-				Args: []tailkit.Arg{
-					{
-						Name:     "service",
-						Type:     "string",
-						Required: true,
-						Pattern:  tailkit.PatternIdentifier,
-					},
-				},
-			},
-		},
 	}
 
 	fmt.Println("Registering devbox with tailkitd...")

@@ -90,7 +90,6 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 	// ── Peers ────────────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /peers", sh.handleListPeers)
 
-	// auth.Middleware now delegates to tailkit.AuthMiddleware(srv) internally.
 	var h http.Handler = mux
 	h = auth.Middleware(srv)(h)
 	return h
