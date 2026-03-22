@@ -73,7 +73,7 @@ func printResults(results []tailkit.SendResult) {
 			fmt.Printf("    - %s: ok \n", result.DestMachine)
 			ok++
 		} else {
-			fmt.Printf("    - %s: fail \n", result.DestMachine)
+			fmt.Printf("    - %s: fail, %s \n", result.DestMachine, result.Error)
 			fail++
 		}
 

@@ -74,6 +74,9 @@ export interface Blob {
     target: string;
     success: boolean;
     error?: string;
+    local_path?: string;
+    written_to?: string;
+    dest_machine?: string;
   }
   
   export interface SendResponse {

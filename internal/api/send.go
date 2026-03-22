@@ -49,18 +49,14 @@ func (h *sendHandler) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	destDir := req.DestDir
-	if destDir == "" {
-		destDir = transfer.DEFAULT_DEST_DIR
-	}
-
 	results := transfer.Send(ctx, h.srv, transfer.SendPackage{
 		FileID:     file.ID,
 		FileName:   file.FileName,
+		FilePath:   file.Path,
 		BlobSha256: file.Sha256,
 		BlobPath:   h.blobs.Path(file.Sha256),
 		Targets:    targets,
-		DestDir:    destDir,
+		DestDir:    req.DestDir,
 	})
 
 	jsonOK(w, results)

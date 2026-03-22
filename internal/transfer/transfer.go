@@ -30,6 +30,7 @@ const DEFAULT_DEST_DIR = "/var/lib/tailkitd/recv/"
 type SendPackage struct {
 	FileID     string
 	FileName   string
+	FilePath   string
 	BlobSha256 string
 	BlobPath   string   // absolute path to the zstd-compressed blob on disk
 	Targets    []string // Tailscale short hostnames
@@ -58,13 +59,34 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 		}
 	}
 
+	destPath := GetDestPath(pkg)
+
+	body, err := readBlob(pkg.BlobPath)
+	if err != nil {
+		return failResults(pkg.Targets, pkg.BlobPath, destPath, err)
+	}
+
+	TEMP_DIR := os.TempDir()
+	tmp, err := os.CreateTemp(TEMP_DIR, ".tailkitd-recv-*")
+	if err != nil {
+		return failResults(pkg.Targets, pkg.BlobPath, destPath, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) // no-op after successful rename
+
+	_, err = io.Copy(tmp, bytes.NewReader(body))
+	if err != nil {
+		_ = tmp.Close()
+		return failResults(pkg.Targets, pkg.BlobPath, destPath, err)
+	}
+
 	results := make([]tailkit.SendResult, 0, len(pkg.Targets))
 	for _, target := range pkg.Targets {
 		dnsName, ok := peers[strings.ToLower(target)]
 		if !ok {
 			dnsName = target
 		}
-		res, err := sendViaTailkitd(ctx, srv, dnsName, pkg)
+		res, err := sendViaTailkitd(ctx, srv, dnsName, tmpPath, pkg)
 		if err != nil {
 			log.Printf("transfer: deliver to %s failed: %v", target, err)
 		}
@@ -84,45 +106,28 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 // established through the WireGuard tunnel. tailkitd calls lc.WhoIs on the
 // inbound connection and sees us as a legitimate tailnet peer — no SSH key
 // or separate credential is required.
-func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName string, pkg SendPackage) (*tailkit.SendResult, error) {
+func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName, tmpPath string, pkg SendPackage) (*tailkit.SendResult, error) {
 	// Decompress the blob before sending — blobs are stored zstd-compressed
 	// by the BlobStore but tailkitd expects raw file bytes.
 
-	destPath := expandTilde(pkg.DestDir) + "/" + filepath.Base(pkg.FileName)
-	tailkitdHost := shortName(dnsName)
-
+	dest := GetDestPath(pkg)
 	failResult := tailkit.SendResult{
-		LocalPath:   pkg.BlobPath,
-		WrittenTo:   destPath,
+		ToolName:    "devbox",
+		Filename:    pkg.FileName,
+		LocalPath:   pkg.FilePath,
+		WrittenTo:   dest,
 		DestMachine: dnsName,
 		Success:     false,
 	}
 
-	body, err := readBlob(pkg.BlobPath)
-	if err != nil {
-		return &failResult, nil
-	}
-
-	TEMP_DIR := os.TempDir()
-	tmp, err := os.CreateTemp(TEMP_DIR, ".tailkitd-recv-*")
-	if err != nil {
-		return &failResult, nil
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) // no-op after successful rename
-
-	_, err = io.Copy(tmp, bytes.NewReader(body))
-	if err != nil {
-		_ = tmp.Close()
-		return &failResult, nil
-	}
-
-	res, err := tailkit.Node(srv, tailkitdHost).Send(ctx, tailkit.SendRequest{
+	res, err := tailkit.Node(srv, dnsName).Send(ctx, tailkit.SendRequest{
+		ToolName:  "devbox",
 		LocalPath: tmpPath,
-		DestPath:  destPath,
+		DestPath:  dest,
+		Filename:  pkg.FileName,
 	})
 	if err != nil {
-
+		failResult.Error = err.Error()
 		return &failResult, nil
 	}
 
@@ -148,8 +153,10 @@ func resolvePeers(ctx context.Context, srv *tailkit.Server) (map[string]string, 
 			continue
 		}
 		short := strings.ToLower(strings.SplitN(dns, ".", 2)[0])
-		peers[short] = dns
-		peers[strings.ToLower(dns)] = dns
+		os_hostname := strings.ToLower(peer.HostName)
+		peers[short] = os_hostname
+		peers[strings.ToLower(dns)] = os_hostname
+		peers[os_hostname] = os_hostname
 	}
 	return peers, nil
 }
@@ -173,16 +180,6 @@ func readBlob(blobPath string) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
-// shortName returns the first DNS label of a MagicDNS hostname, lowercased.
-// "laptop.tail12345.ts.net." → "laptop"
-func shortName(dnsName string) string {
-	dnsName = strings.TrimSuffix(dnsName, ".")
-	if idx := strings.Index(dnsName, "."); idx > 0 {
-		return strings.ToLower(dnsName[:idx])
-	}
-	return strings.ToLower(dnsName)
-}
-
 // expandTilde replaces a leading "~/" with the user's home directory.
 func expandTilde(path string) string {
 	if !strings.HasPrefix(path, "~/") {
@@ -193,4 +190,26 @@ func expandTilde(path string) string {
 		return strings.Replace(path, "~", "$HOME", 1)
 	}
 	return home + path[1:]
+}
+
+func failResults(targets []string, localPath string, writtenTo string, err error) []tailkit.SendResult {
+
+	results := make([]tailkit.SendResult, len(targets))
+	for i := range results {
+		results[i] = tailkit.SendResult{
+			LocalPath:   localPath,
+			WrittenTo:   writtenTo,
+			DestMachine: targets[i],
+			Success:     false,
+			Error:       err.Error(),
+		}
+	}
+	return results
+}
+
+func GetDestPath(pkg SendPackage) string {
+	if pkg.DestDir == "" {
+		return ""
+	}
+	return expandTilde(pkg.DestDir) + "/" + filepath.Base(pkg.FileName)
 }

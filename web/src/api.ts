@@ -1,6 +1,6 @@
 import type {
   File, HealthResponse, Peer, Directory, Version, UpdateResponse,
-  SendResponse
+  SendResult
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -107,8 +107,8 @@ export const api = {
     request<File>(`/files/${id}/versions/${n}/rollback`, { method: 'POST' }),
 
   /** POST /files/{id}/deliver */
-  sendFile: (id: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResponse> =>
-    request<SendResponse>(`/files/${id}/send`, {
+  sendFile: (id: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResult[]> =>
+    request<SendResult[]>(`/files/${id}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),
@@ -139,8 +139,8 @@ export const tagDirectory = (dir: string, tags: string[]): Promise<void> =>
     body: JSON.stringify({ tags }),
   });
 
-export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResponse> =>
-  request<SendResponse>(`/dirs/${encodeURIComponent(dir)}/send`, {
+export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResult[]> =>
+  request<SendResult[]>(`/dirs/${encodeURIComponent(dir)}/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),

@@ -49,7 +49,8 @@
       } else if (dir) {
         res = await sendDirectory(dir.id, targets, false, destDir);
       }
-      results = res?.results ?? [];
+      results = res ?? [];
+      console.log(results)
     } catch (e: unknown) {
       error = (e as Error).message;
     } finally {
@@ -105,7 +106,7 @@
                 </svg>
               {/if}
             </span>
-            <span class="result-host">{r.target}</span>
+            <span class="result-host">{r.dest_machine}</span>
             {#if r.error}<span class="result-err">{r.error}</span>{/if}
           </div>
         {/each}
@@ -157,7 +158,7 @@
           Destination directory
           <input
             type="text"
-            placeholder="/home/will"
+            placeholder="/var/lib/tailkitd/recv/devbox"
             bind:value={destDir}
           />
         </label>
