@@ -44,7 +44,7 @@ func PushCmd() *cobra.Command {
 				return err
 			}
 
-			var result types.Directory
+			var result types.Directory[types.File]
 			if err := internal.Decode(resp, &result); err != nil {
 				return err
 			}

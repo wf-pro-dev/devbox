@@ -7,19 +7,22 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/devbox/types"
+	"github.com/wf-pro-dev/tailkit"
 )
+
+// key is the dest manchine value is the results
+type SendDirResult map[string][]tailkit.SendResult
 
 func SendCmd() *cobra.Command {
 	var to, dest string
 	var all bool
 
 	c := &cobra.Command{
-		Use:  "sendr <name|id>",
+		Use:  "send <name|id>",
 		Args: cobra.ExactArgs(1),
-		Example: `  devbox-cli dirs deliver nginx --to myhost
-  devbox-cli dirs deliver nginx --to host1,host2 --dest /etc/nginx
-  devbox-cli dirs deliver nginx --all`,
+		Example: `  devbox-cli dirs send nginx --to myhost
+  devbox-cli dirs send nginx --to host1,host2 --dest /etc/nginx
+  devbox-cli dirs send nginx --all`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if !all && to == "" {
 				return fmt.Errorf("specify --to <host> or --all")
@@ -43,31 +46,19 @@ func SendCmd() *cobra.Command {
 				body["targets"] = targets
 			}
 
-			u := internal.Server() + "/dirs/" + url.PathEscape(dir.Prefix) + "/deliver"
+			fmt.Printf("\nSending %s to %d machines :\n", dir.Prefix, len(to))
+			u := internal.Server() + "/dirs/" + url.PathEscape(dir.Prefix) + "/send"
 			resp, err := internal.PostJSON(u, body)
 			if err != nil {
 				return err
 			}
 
-			var result struct {
-				Prefix  string             `json:"prefix"`
-				Results []types.SendResult `json:"results"`
-			}
-			if err := internal.Decode(resp, &result); err != nil {
+			var allResults SendDirResult
+			if err := internal.Decode(resp, &allResults); err != nil {
 				return err
 			}
 
-			ok, fail := 0, 0
-			for _, r := range result.Results {
-				if r.Success {
-					ok++
-					fmt.Printf("  ok   %s -> %s\n", result.Prefix, r.Target)
-				} else {
-					fail++
-					fmt.Printf("  fail %s -> %s: %s\n", result.Prefix, r.Target, r.Error)
-				}
-			}
-			fmt.Printf("\n%d ok, %d failed\n", ok, fail)
+			printResults(allResults)
 			return nil
 		},
 	}
@@ -75,4 +66,27 @@ func SendCmd() *cobra.Command {
 	c.Flags().StringVar(&dest, "dest", "", "Destination directory on target")
 	c.Flags().BoolVar(&all, "all", false, "Deliver to all online peers")
 	return c
+}
+
+func printResults(allResults SendDirResult) {
+	ok, fail := 0, 0
+	fmt.Println()
+	for destMachine, results := range allResults {
+		success := true
+		machineFailed := 0
+		for _, result := range results {
+			if !result.Success {
+				success = false
+				machineFailed++
+			}
+		}
+		if success {
+			fmt.Printf("    - %s: ok \n", destMachine)
+			ok++
+		} else {
+			fmt.Printf("    - %s: fail, %d files failed \n", destMachine, machineFailed)
+			fail++
+		}
+	}
+	fmt.Printf("\n%d ok, %d failed\n", ok, fail)
 }

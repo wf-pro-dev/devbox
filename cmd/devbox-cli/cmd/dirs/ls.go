@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -28,7 +29,7 @@ func LsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var dirs []types.Directory
+			var dirs []types.Directory[db.File]
 			if err := internal.Decode(resp, &dirs); err != nil {
 				return err
 			}

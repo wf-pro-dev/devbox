@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wf-pro-dev/devbox/internal/auth"
 	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/internal/models"
 	"github.com/wf-pro-dev/devbox/internal/search"
 	"github.com/wf-pro-dev/devbox/internal/storage"
 	"github.com/wf-pro-dev/devbox/internal/version"
@@ -149,44 +150,27 @@ func (h *filesHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if filePath == "" {
 		filePath = header.Filename
 	}
+
 	language := r.FormValue("language")
 	if language == "" {
 		language = detectLanguage(header.Filename)
 	}
 
-	wr, err := h.blobs.Write(ctx, formFile)
+	tags := splitTags(r.FormValue("tags"))
+
+	file, err := models.CreateFile(ctx, h.store, h.blobs, h.searcher,
+		formFile,
+		filePath,
+		r.FormValue("description"),
+		language,
+		tags,
+	)
 	if err != nil {
-		jsonError(w, "failed to store file", http.StatusInternalServerError)
-		log.Printf("write blob: %v", err)
+		jsonError(w, "failed to create file", http.StatusInternalServerError)
 		return
 	}
 
-	fileID := uuid.New().String()
-	file, err := h.store.Queries.CreateFile(ctx, db.CreateFileParams{
-		ID:          fileID,
-		Path:        filePath,
-		FileName:    filepath.Base(filePath),
-		Description: r.FormValue("description"),
-		Language:    language,
-		Size:        wr.Size,
-		Sha256:      wr.SHA256,
-		UploadedBy:  callerHost(ctx),
-	})
-	if err != nil {
-		jsonError(w, "failed to save file metadata", http.StatusInternalServerError)
-		log.Printf("create file %s: %v", fileID, err)
-		return
-	}
-
-	if err := applyTags(ctx, h.store.Queries, fileID, splitTags(r.FormValue("tags"))); err != nil {
-		log.Printf("apply tags %s: %v", fileID, err)
-	}
-
-	go h.indexContent(fileID, wr.SHA256)
-
-	m := buildTagMap(ctx, h.store.Queries, []string{file.ID})
-
-	jsonCreated(w, types.File{File: file, Tags: m[file.ID]})
+	jsonCreated(w, file)
 }
 
 // ── PUT /files/{id} ───────────────────────────────────────────────────────────
@@ -228,7 +212,7 @@ func (h *filesHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result == version.ResultUpdated {
-		go h.indexContent(file.ID, updated.Sha256)
+		go models.IndexContent(ctx, h.blobs, h.searcher, file.ID, updated.Sha256)
 	}
 
 	m := buildTagMap(ctx, h.store.Queries, []string{updated.ID})
@@ -630,21 +614,6 @@ func (h *filesHandler) handleDiff(w http.ResponseWriter, r *http.Request) {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-func (h *filesHandler) indexContent(fileID, sha256hex string) {
-	rc, err := h.blobs.Open(sha256hex)
-	if err != nil {
-		log.Printf("index: open blob %s: %v", fileID, err)
-		return
-	}
-	defer rc.Close()
-	content, err := io.ReadAll(rc)
-	if err != nil {
-		log.Printf("index: read blob %s: %v", fileID, err)
-		return
-	}
-	_ = h.searcher.IndexFileContent(context.Background(), fileID, string(content))
-}
-
 func callerHost(ctx context.Context) string {
 	if id, ok := auth.FromContext(ctx); ok {
 		return id.Hostname
@@ -693,17 +662,4 @@ func detectLanguage(filename string) string {
 
 func isNotFound(err error) bool {
 	return err != nil && (errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no rows"))
-}
-
-func splitTags(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	var out []string
-	for _, t := range strings.Split(raw, ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
 }

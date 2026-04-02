@@ -88,6 +88,33 @@ func (q *Queries) GetMinVersionToKeep(ctx context.Context, arg GetMinVersionToKe
 	return coalesce, err
 }
 
+const getVersion = `-- name: GetVersion :one
+SELECT id, file_id, version, sha256, size, uploaded_by, message, created_at FROM versions WHERE file_id = ? AND version = ?
+`
+
+type GetVersionParams struct {
+	FileID  string `json:"file_id"`
+	Version int64  `json:"version"`
+}
+
+// GetVersion gets a specific version of a file.
+// version: the version number to get
+func (q *Queries) GetVersion(ctx context.Context, arg GetVersionParams) (Version, error) {
+	row := q.db.QueryRowContext(ctx, getVersion, arg.FileID, arg.Version)
+	var i Version
+	err := row.Scan(
+		&i.ID,
+		&i.FileID,
+		&i.Version,
+		&i.Sha256,
+		&i.Size,
+		&i.UploadedBy,
+		&i.Message,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listPrunableVersions = `-- name: ListPrunableVersions :many
 SELECT sha256, version FROM versions
 WHERE file_id = ?
@@ -114,6 +141,49 @@ func (q *Queries) ListPrunableVersions(ctx context.Context, arg ListPrunableVers
 	for rows.Next() {
 		var i ListPrunableVersionsRow
 		if err := rows.Scan(&i.Sha256, &i.Version); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRollbackVersions = `-- name: ListRollbackVersions :many
+SELECT id, file_id, version, sha256, size, uploaded_by, message, created_at FROM versions
+WHERE file_id = ?
+  AND version > ?
+`
+
+type ListRollbackVersionsParams struct {
+	FileID  string `json:"file_id"`
+	Version int64  `json:"version"`
+}
+
+func (q *Queries) ListRollbackVersions(ctx context.Context, arg ListRollbackVersionsParams) ([]Version, error) {
+	rows, err := q.db.QueryContext(ctx, listRollbackVersions, arg.FileID, arg.Version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Version{}
+	for rows.Next() {
+		var i Version
+		if err := rows.Scan(
+			&i.ID,
+			&i.FileID,
+			&i.Version,
+			&i.Sha256,
+			&i.Size,
+			&i.UploadedBy,
+			&i.Message,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -226,6 +296,22 @@ type PruneOldVersionsParams struct {
 
 func (q *Queries) PruneOldVersions(ctx context.Context, arg PruneOldVersionsParams) error {
 	_, err := q.db.ExecContext(ctx, pruneOldVersions, arg.FileID, arg.Version)
+	return err
+}
+
+const rollbackToVersion = `-- name: RollbackToVersion :exec
+DELETE FROM versions
+WHERE file_id = ?
+  AND version > ?
+`
+
+type RollbackToVersionParams struct {
+	FileID  string `json:"file_id"`
+	Version int64  `json:"version"`
+}
+
+func (q *Queries) RollbackToVersion(ctx context.Context, arg RollbackToVersionParams) error {
+	_, err := q.db.ExecContext(ctx, rollbackToVersion, arg.FileID, arg.Version)
 	return err
 }
 

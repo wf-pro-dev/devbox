@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -88,13 +89,13 @@ func PullCmd() *cobra.Command {
 }
 
 // getCollection fetches collection metadata and its file list.
-func getDirectory(nameOrID string) (*types.Directory, error) {
+func getDirectory(nameOrID string) (*types.Directory[db.File], error) {
 	u := internal.Server() + "/dirs/" + url.PathEscape(nameOrID)
 	resp, err := internal.GetJSON(u)
 	if err != nil {
 		return nil, err
 	}
-	var result types.Directory
+	var result types.Directory[db.File]
 	if err := internal.Decode(resp, &result); err != nil {
 		return nil, err
 	}

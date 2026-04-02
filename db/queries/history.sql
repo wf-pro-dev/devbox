@@ -6,6 +6,11 @@ RETURNING *;
 -- name: GetLatestVersionNumber :one
 SELECT COALESCE(MAX(version), 0) FROM versions WHERE file_id = ?;
 
+-- GetVersion gets a specific version of a file.
+-- version: the version number to get
+-- name: GetVersion :one
+SELECT * FROM versions WHERE file_id = ? AND version = ?;
+
 -- ListVersions is the single entry point for querying versions.
 -- Pass NULL for any filter you want to ignore.
 -- file_id: versions for a single file
@@ -40,6 +45,17 @@ WHERE file_id = ?
 DELETE FROM versions
 WHERE file_id = ?
   AND version < ?;
+
+-- name: ListRollbackVersions :many
+SELECT * FROM versions
+WHERE file_id = ?
+  AND version > ?;
+
+-- name: RollbackToVersion :exec
+DELETE FROM versions
+WHERE file_id = ?
+  AND version > ?;
+
 
 -- name: CreateTransfer :one
 INSERT INTO transfers (from_host, to_host, file_path, size, duration_ms)

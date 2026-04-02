@@ -86,74 +86,52 @@ func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseDir := req.DestDir
-	if baseDir == "" {
-		baseDir = transfer.DEFAULT_DEST_DIR + strings.TrimSuffix(prefix, "/")
-	}
+	// key is the dest manchine value is the results
+	type SendDirResult map[string][]tailkit.SendResult
 
-	type fileDelivery struct {
-		Path    string               `json:"path"`
-		Results []tailkit.SendResult `json:"results"`
-	}
-
-	var allResults []fileDelivery
+	const TAILKIT_INBOX = "/var/lib/tailkitd/recv/"
+	var allResults SendDirResult = make(map[string][]tailkit.SendResult)
 	for _, f := range files {
-		rel := strings.TrimPrefix(f.Path, prefix)
-		destDir := baseDir
-		if dir := filepath.Dir(rel); dir != "." {
-			destDir = baseDir + "/" + dir
+
+		reqDestDir := req.DestDir
+		fileDir := filepath.Dir(f.Path)
+
+		destDir := ""
+
+		if reqDestDir != "" {
+			if !strings.HasSuffix(reqDestDir, "/") {
+				reqDestDir += "/"
+
+			}
+			destDir = strings.TrimSuffix(reqDestDir+fileDir, f.FileName)
 		}
 
 		results := transfer.Send(ctx, h.srv, transfer.SendPackage{
 			FileID:     f.ID,
-			FileName:   f.FileName,
+			FileName:   f.Path,
 			BlobSha256: f.Sha256,
 			BlobPath:   h.blobs.Path(f.Sha256),
 			Targets:    targets,
 			DestDir:    destDir,
 		})
 
-		allResults = append(allResults, fileDelivery{Path: f.Path, Results: results})
+		for _, result := range results {
+			allResults[result.DestMachine] = append(allResults[result.DestMachine], result)
+		}
 	}
 
-	jsonOK(w, map[string]any{"prefix": prefix, "results": allResults})
+	jsonOK(w, allResults)
 }
 
 // ── GET /peers ────────────────────────────────────────────────────────────────
 
 func (h *sendHandler) handleListPeers(w http.ResponseWriter, r *http.Request) {
-	// Peer discovery via the tailkit server's embedded tsnet LocalClient.
-	lc, err := h.srv.Server.LocalClient()
+
+	ctx := r.Context()
+	peers, err := tailkit.AllPeers(ctx, h.srv)
 	if err != nil {
-		jsonError(w, "could not get local client", http.StatusInternalServerError)
+		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	status, err := lc.Status(r.Context())
-	if err != nil {
-		jsonError(w, "could not list tailnet peers", http.StatusInternalServerError)
-		return
-	}
-
-	type peer struct {
-		Hostname string `json:"hostname"`
-		DNSName  string `json:"dns_name"`
-		IP       string `json:"ip"`
-		Online   bool   `json:"online"`
-	}
-
-	var peers []peer
-	for _, p := range status.Peer {
-		dns := strings.TrimSuffix(p.DNSName, ".")
-		short := strings.SplitN(dns, ".", 2)[0]
-		ip := ""
-		if len(p.TailscaleIPs) > 0 {
-			ip = p.TailscaleIPs[0].String()
-		}
-		peers = append(peers, peer{Hostname: short, DNSName: dns, IP: ip, Online: p.Online})
-	}
-	if peers == nil {
-		peers = []peer{}
 	}
 	jsonOK(w, peers)
 }

@@ -75,10 +75,10 @@ func (s *Service) Update(ctx context.Context, p UpdateParams) (Result, db.File, 
 
 	if _, err := s.queries.SnapshotVersion(ctx, db.SnapshotVersionParams{
 		FileID:     p.FileID,
-		Version:    file.Version,
-		Sha256:     file.Sha256,
-		Size:       file.Size,
-		UploadedBy: file.UploadedBy,
+		Version:    file.Version + 1,
+		Sha256:     wr.SHA256,
+		Size:       wr.Size,
+		UploadedBy: p.UploadedBy,
 		Message:    p.Message,
 	}); err != nil {
 		return 0, db.File{}, fmt.Errorf("snapshot version: %w", err)
@@ -104,61 +104,48 @@ func (s *Service) Update(ctx context.Context, p UpdateParams) (Result, db.File, 
 // Implemented as a forward update so no history is lost — current state is
 // snapshotted before the target version's blob is restored.
 func (s *Service) Rollback(ctx context.Context, fileID string, targetVersion int64, uploadedBy string) (db.File, error) {
-	// Find the target version in the version list.
-	versions, err := s.queries.ListVersions(ctx, db.ListVersionsParams{
-		FileID: &fileID,
+
+	target, err := s.queries.GetVersion(ctx, db.GetVersionParams{
+		FileID:  fileID,
+		Version: targetVersion,
 	})
 	if err != nil {
-		return db.File{}, fmt.Errorf("list versions: %w", err)
-	}
-	var target *db.Version
-	for i := range versions {
-		if versions[i].Version == targetVersion {
-			target = &versions[i]
-			break
-		}
-	}
-	if target == nil {
-		return db.File{}, fmt.Errorf("version %d not found", targetVersion)
+		return db.File{}, fmt.Errorf("get version: %w", err)
 	}
 
-	file, err := s.getFile(ctx, fileID)
+	rollbackVersions, err := s.queries.ListRollbackVersions(ctx, db.ListRollbackVersionsParams{
+		FileID:  fileID,
+		Version: target.Version,
+	})
 	if err != nil {
-		return db.File{}, fmt.Errorf("get file: %w", err)
+		return db.File{}, fmt.Errorf("list rollback versions: %w", err)
 	}
 
-	latestNumIntrface, err := s.queries.GetLatestVersionNumber(ctx, fileID)
-	if err != nil {
-		return db.File{}, fmt.Errorf("get latest version: %w", err)
-	}
-	latestNum, ok := latestNumIntrface.(int64)
-	if !ok {
-		return db.File{}, fmt.Errorf("get latest version: %w", err)
-	}
-
-	if _, err := s.queries.SnapshotVersion(ctx, db.SnapshotVersionParams{
-		FileID:     fileID,
-		Version:    latestNum,
-		Sha256:     file.Sha256,
-		Size:       file.Size,
-		UploadedBy: file.UploadedBy,
-		Message:    fmt.Sprintf("pre-rollback snapshot (was v%d)", latestNum),
+	if err := s.queries.RollbackToVersion(ctx, db.RollbackToVersionParams{
+		FileID:  fileID,
+		Version: target.Version,
 	}); err != nil {
-		return db.File{}, fmt.Errorf("snapshot before rollback: %w", err)
+		return db.File{}, fmt.Errorf("rollback to version: %w", err)
 	}
 
 	updated, err := s.queries.UpdateFileContent(ctx, db.UpdateFileContentParams{
 		ID:         fileID,
 		Sha256:     target.Sha256,
 		Size:       target.Size,
-		Version:    latestNum + 1,
+		Version:    target.Version,
 		UploadedBy: uploadedBy,
 	})
 	if err != nil {
 		return db.File{}, fmt.Errorf("update file for rollback: %w", err)
 	}
 
-	go s.pruneVersions(context.Background(), fileID)
+	go func() {
+		for _, v := range rollbackVersions {
+			if err := s.blobs.DeleteIfUnreferenced(ctx, v.Sha256); err != nil {
+				log.Printf("version rollback: cleanup blob %s: %v", v.Sha256[:8], err)
+			}
+		}
+	}()
 
 	return updated, nil
 }

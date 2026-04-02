@@ -38,9 +38,7 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 		verSvc:   verSvc,
 	}
 	dh := &dirsHandler{
-		store:  store,
-		blobs:  blobs,
-		verSvc: verSvc,
+		filesHandler: *fh,
 	}
 	sh := &sendHandler{
 		store: store,

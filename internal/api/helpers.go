@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/internal/models"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -45,39 +45,16 @@ type dirResponse struct {
 
 // ── Tag helpers ───────────────────────────────────────────────────────────────
 
-// applyTags upserts each tag and attaches it to fileID.
-func applyTags(ctx context.Context, q *db.Queries, fileID string, tagNames []string) error {
-	for _, name := range tagNames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		tag, err := q.UpsertTag(ctx, name)
-		if err != nil {
-			return err
-		}
-		if err := q.AddTagToFile(ctx, db.AddTagToFileParams{
-			FileID: fileID,
-			TagID:  tag.ID,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+func buildTagMap(ctx context.Context, q *db.Queries, ids []string) map[string][]string {
+	return models.BuildTagMap(ctx, q, ids)
 }
 
-// buildTagMap fetches tags for a set of file IDs in one query.
-// Returns map[fileID][]tagName.
-func buildTagMap(ctx context.Context, q *db.Queries, ids []string) map[string][]string {
-	if len(ids) == 0 {
-		return map[string][]string{}
-	}
-	rows, _ := q.ListTagsForFiles(ctx, ids)
-	out := make(map[string][]string, len(ids))
-	for _, row := range rows {
-		out[row.FileID] = append(out[row.FileID], row.Name)
-	}
-	return out
+func applyTags(ctx context.Context, q *db.Queries, fileID string, tagNames []string) error {
+	return models.ApplyTags(ctx, q, fileID, tagNames)
+}
+
+func splitTags(raw string) []string {
+	return models.SplitTags(raw)
 }
 
 // prefixTags returns distinct tag names across all files under prefix.

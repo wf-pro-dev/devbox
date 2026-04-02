@@ -44,7 +44,7 @@ func SendCmd() *cobra.Command {
 				body["targets"] = targets
 			}
 
-			fmt.Printf("\nSending %s (%s) to %s :\n", f.FileName, internal.ShortID(f.ID), to)
+			fmt.Printf("\nSending %s (%s) to %d machines :\n", f.FileName, internal.ShortID(f.ID), len(to))
 			u := internal.Server() + "/files/" + url.PathEscape(f.ID) + "/send"
 			resp, err := internal.PostJSON(u, body)
 			if err != nil {

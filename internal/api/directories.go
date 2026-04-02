@@ -2,23 +2,25 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/internal/models"
 	"github.com/wf-pro-dev/devbox/internal/storage"
 	"github.com/wf-pro-dev/devbox/internal/version"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
 type dirsHandler struct {
-	store  *storage.Store
-	blobs  *storage.BlobStore
-	verSvc *version.Service
+	filesHandler
 }
 
 // toPrefix normalises a directory name to a trailing-slash prefix.
@@ -29,12 +31,6 @@ func toPrefix(name string) string {
 		return ""
 	}
 	return name + "/"
-}
-
-// listDirFiles returns all files under prefix using ListFiles.
-func (h *dirsHandler) listDirFiles(ctx interface{ Deadline() (interface{}, bool) }, prefix string) ([]db.File, error) {
-	// ctx is context.Context — typed inline to avoid a separate import alias
-	return nil, nil // placeholder — real implementation below uses the correct type
 }
 
 // ── GET /dirs ─────────────────────────────────────────────────────────────────
@@ -75,10 +71,10 @@ func (h *dirsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		dirMap[name].files = append(dirMap[name].files, f)
 	}
 
-	resp := make([]types.Directory, 0, len(dirMap))
+	resp := make([]types.Directory[db.File], 0, len(dirMap))
 	for name, entry := range dirMap {
 		prefix := name + "/"
-		resp = append(resp, types.Directory{Prefix: prefix, FileCount: len(entry.files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: entry.files})
+		resp = append(resp, types.Directory[db.File]{Prefix: prefix, FileCount: len(entry.files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: entry.files})
 	}
 
 	jsonOK(w, resp)
@@ -96,6 +92,12 @@ func (h *dirsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	prefix := toPrefix(dirName)
 
+	isContent := r.URL.Query().Get("content")
+	if isContent == "true" {
+		h.handleGetDirContent(w, r)
+		return
+	}
+
 	files, err := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
 	if err != nil {
 		jsonError(w, "failed to list files", http.StatusInternalServerError)
@@ -106,7 +108,44 @@ func (h *dirsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jsonOK(w, types.Directory{Prefix: prefix, FileCount: len(files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: files})
+	jsonOK(w, types.Directory[db.File]{Prefix: prefix, FileCount: len(files), Tags: prefixTags(ctx, h.store.Queries, prefix), Files: files})
+}
+
+// ── GET /dirs/{dir}?content=true ─────────────────────────────────────────────────────
+// Returns a compressed tarball of the directory.
+
+func (h *dirsHandler) handleGetDirContent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	prefix := toPrefix(r.PathValue("dir"))
+
+	files, err := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
+	if err != nil {
+		jsonError(w, "failed to list files", http.StatusInternalServerError)
+		return
+	}
+
+	dirName := filepath.Base(prefix)
+	tarball, err := storage.CreateTarball(dirName, files, h.blobs)
+	if err != nil {
+		jsonError(w, fmt.Sprintf("failed to create tarball: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer tarball.Close()
+
+	stat, err := tarball.Stat()
+	if err != nil {
+		jsonError(w, fmt.Sprintf("failed to get tarball stat: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/tar+gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.tar.gz"`, filepath.Base(prefix)))
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	_, err = io.Copy(w, tarball)
+	if err != nil {
+		jsonError(w, fmt.Sprintf("failed to copy tarball: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // ── POST /dirs ────────────────────────────────────────────────────────────────
@@ -134,12 +173,11 @@ func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	prefix := toPrefix(name)
 	tagNames := splitTags(r.FormValue("tags"))
-	uploadedBy := callerHost(ctx)
 
 	relPaths := r.MultipartForm.Value["path[]"]
 	formFiles := r.MultipartForm.File["file"]
 
-	var created []db.File
+	var created []types.File
 
 	for i, fh := range formFiles {
 		relPath := fh.Filename
@@ -155,36 +193,26 @@ func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		wr, err := h.blobs.Write(ctx, f)
-		f.Close()
+		file, err := models.CreateFile(
+			ctx,
+			h.store,
+			h.blobs,
+			h.searcher,
+			f,
+			fullPath,
+			"",
+			detectLanguage(fh.Filename),
+			tagNames,
+		)
 		if err != nil {
-			log.Printf("dirs create: write blob %s: %v", relPath, err)
+			log.Printf("dirs create: create file %s: %v", relPath, err)
 			continue
 		}
 
-		fileID := uuid.New().String()
-		dbFile, err := h.store.Queries.CreateFile(ctx, db.CreateFileParams{
-			ID:         fileID,
-			Path:       fullPath,
-			FileName:   filepath.Base(relPath),
-			Language:   detectLanguage(fh.Filename),
-			Size:       wr.Size,
-			Sha256:     wr.SHA256,
-			UploadedBy: uploadedBy,
-		})
-		if err != nil {
-			log.Printf("dirs create: insert %s: %v", fullPath, err)
-			continue
-		}
-
-		if err := applyTags(ctx, h.store.Queries, fileID, tagNames); err != nil {
-			log.Printf("dirs create: apply tags %s: %v", fileID, err)
-		}
-
-		created = append(created, dbFile)
+		created = append(created, *file)
 	}
 
-	jsonCreated(w, types.Directory{Prefix: prefix, FileCount: len(created), Tags: tagNames, Files: created})
+	jsonCreated(w, types.Directory[types.File]{Prefix: prefix, FileCount: len(created), Tags: tagNames, Files: created})
 }
 
 // ── PUT /dirs/{dir} ───────────────────────────────────────────────────────────

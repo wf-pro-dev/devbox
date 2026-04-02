@@ -61,7 +61,7 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 
 	destPath := GetDestPath(pkg)
 
-	body, err := readBlob(pkg.BlobPath)
+	body, err := storage.ReadBlob(pkg.BlobPath)
 	if err != nil {
 		return failResults(pkg.Targets, pkg.BlobPath, destPath, err)
 	}
@@ -159,25 +159,6 @@ func resolvePeers(ctx context.Context, srv *tailkit.Server) (map[string]string, 
 		peers[os_hostname] = os_hostname
 	}
 	return peers, nil
-}
-
-// readBlob opens the zstd-compressed blob at blobPath, decompresses it, and
-// returns the raw bytes. The BlobStore stores all blobs zstd-compressed but
-// tailkitd expects raw file content.
-func readBlob(blobPath string) ([]byte, error) {
-	f, err := os.Open(blobPath)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", blobPath, err)
-	}
-	defer f.Close()
-
-	rc, err := storage.DecompressFrom(f)
-	if err != nil {
-		return nil, fmt.Errorf("decompress %s: %w", blobPath, err)
-	}
-	defer rc.Close()
-
-	return io.ReadAll(rc)
 }
 
 // expandTilde replaces a leading "~/" with the user's home directory.
