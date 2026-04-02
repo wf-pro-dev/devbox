@@ -102,6 +102,7 @@
       const segment = parts[parts.length - 1]; // last segment = this dir's name
       const parentPrefix =
         parts.slice(0, -1).join("/") + (parts.length > 1 ? "/" : "");
+        // parentPrefix = "devbox-web/"
 
       // Create (or promote) the node for this directory.
       let node = nodeMap.get(dir.prefix);
@@ -114,7 +115,7 @@
         dirs[idx] = { ...dirs[idx], size };
         node = {
           segment,
-          prefix: dir.prefix,
+          prefix: dir.prefix, 
           dir: { ...dir, size },
           children: [],
         };

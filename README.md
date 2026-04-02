@@ -8,18 +8,21 @@
 
 **devbox** is a lightweight, self-hosted application that acts as a central hub for the files you reach for most as a developer: bash scripts, YAML configs, systemd units, dotfiles, SQL snippets, and anything else you want available on every machine you work from.
 
-It runs as a single binary on any machine in your [Tailscale](https://tailscale.com) network. Any other machine on that tailnet can instantly browse, search, pull, or push files — no accounts, no passwords, no port-forwarding. Trust comes from the network.
+It runs as two containers (API backend + Nginx UI) on any machine in your [Tailscale](https://tailscale.com) network. Any other machine on that tailnet can instantly browse, search, pull, or push files — no accounts, no passwords, no port-forwarding. Trust comes from the network.
+
+A `devbox-cli` binary gives you full access from the terminal on any machine.
 
 ---
 
 ## Features
 
-- **File & snippet storage** — store bash scripts, YAML, TOML, configs, daemons, and plain text. Tag everything, search by content or tag.
-- **Syntax-highlighted preview** — browse and review files from any machine in a browser.
-- **Version history** — every file update is versioned. Roll back anytime.
-- **Direct machine transfer** — send large files peer-to-peer between two tailnet machines via [croc](https://github.com/schollz/croc). Encrypted, resumable, LAN-aware.
+- **File & snippet storage** — store bash scripts, YAML, TOML, configs, systemd units, and plain text. Tag everything, filter by language or tag, search by content.
+- **Directory sync** — push, pull, diff, and sync entire local directories as named collections on the server.
+- **Syntax-highlighted preview** — browse and review files from any machine in the browser with inline editing.
+- **Version history** — every file update is versioned. View the diff, inspect old content, and roll back anytime.
+- **Direct machine delivery** — send files or directories to one or all tailnet peers via [tailkitd](https://github.com/wf-pro-dev/tailkit).
 - **Zero-config auth** — identity comes from Tailscale. No login form. Any machine on your tailnet is trusted.
-- **CLI-first** — a `devbox` CLI lets you push, pull, search, and send without opening a browser.
+- **CLI-first** — a `devbox-cli` covers every operation: push, pull, tag, diff, rollback, send, and more.
 
 ---
 
@@ -27,13 +30,14 @@ It runs as a single binary on any machine in your [Tailscale](https://tailscale.
 
 | Layer | Technology |
 |---|---|
-| Language | Go 1.22+ |
-| HTTP framework | [Fiber v2](https://github.com/gofiber/fiber) |
-| Network & auth | [Tailscale tsnet](https://pkg.go.dev/tailscale.com/tsnet) |
-| File transfer | [croc](https://github.com/schollz/croc) (embedded) |
+| Language | Go 1.26+ |
+| HTTP | Go stdlib `net/http` |
+| Network & auth | [Tailscale tsnet](https://pkg.go.dev/tailscale.com/tsnet) via [tailkit](https://github.com/wf-pro-dev/tailkit) |
+| File delivery | tailkitd (send over Tailscale mesh) |
 | Database | SQLite + FTS5 |
-| Frontend | SvelteKit + CodeMirror 6 |
-| Deployment | Single Docker container |
+| Blob storage | Content-addressable, zstd-compressed, on-disk |
+| Frontend | SvelteKit + svelte-highlight |
+| Deployment | Docker Compose (backend + Nginx) |
 
 ---
 
@@ -47,88 +51,140 @@ It runs as a single binary on any machine in your [Tailscale](https://tailscale.
 │   browser/CLI  ←→  browser/CLI  ←→  devbox host  │
 │                                                  │
 │   ✦ WireGuard mesh, automatic TLS               │
-│   ✦ Identity resolved from node keys            │
-│   ✦ croc P2P transfer stays within tailnet      │
+│   ✦ Identity resolved from Tailscale node keys  │
+│   ✦ File delivery via tailkitd on each peer     │
 └─────────────────────────────────────────────────┘
             ↓ all traffic encrypted
 ┌─────────────────────────────────────────────────┐
-│   devbox binary (tsnet + Fiber + SQLite)         │
-│   ├── REST API                                   │
+│   devbox-backend (tsnet + net/http + SQLite)     │
+│   ├── REST API (/files, /dirs, /peers, /search)  │
 │   ├── Tailscale LocalAPI (identity resolution)   │
-│   ├── croc agent (P2P transfer broker)           │
-│   └── SvelteKit UI (served from embed.FS)        │
+│   └── tailkitd agent (file delivery broker)     │
+├─────────────────────────────────────────────────┤
+│   devbox-ui (SvelteKit, served via Nginx)        │
+│   ├── File browser with syntax highlighting      │
+│   ├── Directory tree view                        │
+│   └── Send / deliver to peers                   │
 └─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## CLI usage (planned)
+## Installation
+
+### CLI (`devbox-cli`)
+
+Install the CLI on any machine with one command:
 
 ```bash
-# Store a file with tags
-devbox push deploy.sh --tag=bash,deploy
-
-# List files by tag
-devbox ls --tag=yaml
-
-# Search by content
-devbox search "postgres"
-
-# Pull a file by ID
-devbox pull abc123
-
-# Pull and pipe directly
-devbox pull abc123 | kubectl apply -f -
-
-# Send a file directly to another machine (P2P)
-devbox send --to=machine-b ./dump.sql
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
 ```
+
+Supports Linux and macOS on `amd64` and `arm64`. After install, register the node:
+
+```bash
+devbox-cli setup
+```
+
+Set your server URL so you don't have to pass it every time:
+
+```bash
+export DEVBOX_SERVER=https://devbox   # your devbox hostname on the tailnet
+```
+
+### Server
+
+> **Note:** Public Docker images are coming with the first stable release. Until then, build from source — see [docs/deployment.md](docs/deployment.md).
+
+Once images are published, the server installs with:
+
+```bash
+# 1. Copy the compose file
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml -o docker-compose.yml
+
+# 2. Set your Tailscale auth key and start
+TS_AUTHKEY=<your-key> docker compose up -d
+```
+
+See [docs/deployment.md](docs/deployment.md) for full setup, environment variables, and build-from-source instructions.
 
 ---
 
-## Getting started
-
-> 🚧 Work in progress — setup instructions will be added as the project is built.
-
-Prerequisites:
-- A machine with [Tailscale](https://tailscale.com/download) installed
-- Docker (or Go 1.22+ to build from source)
-- A Tailscale auth key (for `tsnet` startup)
+## CLI usage
 
 ```bash
-# Clone
-git clone https://github.com/wf-pro-dev/devbox.git
-cd devbox
+# Upload a file with tags
+devbox-cli files push deploy.sh --tags bash,deploy
 
-# Run (Docker)
-docker run -e TS_AUTHKEY=<your-key> -v devbox-data:/data ghcr.io/wf-pro-dev/devbox
+# List files, filter by tag or language
+devbox-cli files ls --tag deploy
+devbox-cli files ls --lang yaml
 
-# Or build from source
-go build ./cmd/devbox
-TS_AUTHKEY=<your-key> ./devbox
+# Download a file
+devbox-cli files pull deploy.sh
+
+# Push a whole directory
+devbox-cli dirs push ./nginx --name nginx --tags infra
+
+# Compare local dir against the server
+devbox-cli dirs diff nginx ./nginx
+
+# Sync changes back up
+devbox-cli dirs update nginx ./nginx -m "update upstream block"
+
+# Send a file to another machine on your tailnet
+devbox-cli files send deploy.sh --to machine-b --dest /opt/scripts
+
+# Send a directory to all online peers
+devbox-cli dirs send nginx --all --dest /etc/nginx
+
+# View version history and roll back
+devbox-cli files log deploy.sh
+devbox-cli files rollback deploy.sh 2
+
+# List online tailnet peers
+devbox-cli peers
 ```
 
-Once running, open `https://devbox` from any machine on your tailnet.
+For the full command reference see [docs/cli.md](docs/cli.md).
 
 ---
 
-## Project structure (planned)
+## Project structure
 
 ```
 devbox/
 ├── cmd/
-│   ├── devbox/        # server entrypoint
-│   └── devbox-cli/    # CLI client
+│   ├── devbox/            # server entrypoint
+│   └── devbox-cli/        # CLI client
+│       └── cmd/
+│           ├── files/     # file subcommands
+│           └── dirs/      # directory subcommands
 ├── internal/
-│   ├── api/           # Fiber route handlers
-│   ├── auth/          # Tailscale identity middleware
-│   ├── storage/       # SQLite + blob storage layer
-│   ├── transfer/      # croc integration
-│   └── search/        # FTS5 query layer
-├── web/               # SvelteKit frontend
-├── Dockerfile
-└── README.md
+│   ├── api/               # HTTP route handlers
+│   ├── auth/              # Tailscale identity middleware
+│   ├── models/            # shared business logic (files, tags)
+│   ├── search/            # FTS5 query layer
+│   ├── storage/           # SQLite store + CAS blob store
+│   ├── transfer/          # tailkitd delivery
+│   ├── version/           # versioning & rollback service
+│   └── progress/          # upload progress tracking
+├── db/queries/            # sqlc SQL queries
+├── web/                   # SvelteKit frontend
+├── docker/                # Dockerfiles + compose
+├── install.sh             # one-line CLI installer
+└── Makefile
 ```
+
+---
+
+## Docs
+
+| Document | Description |
+|---|---|
+| [docs/cli.md](docs/cli.md) | Full CLI reference — all subcommands, flags, examples |
+| [docs/deployment.md](docs/deployment.md) | Server setup, Docker Compose, environment variables |
+| [docs/development.md](docs/development.md) | Build from source, local dev workflow, contributing |
 
 ---
 
