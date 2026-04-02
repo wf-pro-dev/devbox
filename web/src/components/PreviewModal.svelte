@@ -242,13 +242,6 @@
     }
   }
 
-  // ── Language ───────────────────────────────────────────────────────────────
-
-  function ValidHighlightLanguage(lang: string): string {
-    if (["text", "systemd"].includes(lang)) return "plaintext";
-    return lang;
-  }
-
   // ── Misc ───────────────────────────────────────────────────────────────────
 
   function onKey(e: KeyboardEvent) {

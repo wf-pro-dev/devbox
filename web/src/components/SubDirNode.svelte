@@ -9,7 +9,7 @@
   export let dirFiles: Record<string, File[] | undefined>;
   export let onToggle: (dir: Directory) => void;
   export let onDelete: (prefix: string) => void;
-  export let onDeliver: (prefix: string) => void;
+  export let onDeliver: (dir: Directory) => void;
   export let onFileSelect: (f: File) => void;
   export let onFileDownload: (f: File, e: MouseEvent) => void;
   export let onFileDelete: (f: File) => void;
@@ -137,7 +137,7 @@
         <button
           class="na-btn"
           title="Send directory"
-          on:click={() => onDeliver(node.dir.prefix)}
+          on:click={() => onDeliver(node.dir)}
         >
           <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
             <path
@@ -193,13 +193,6 @@
           style="padding-left: {14 + (depth + 1) * INDENT}px"
         >
           Loading files…
-        </div>
-      {:else if files.length === 0}
-        <div
-          class="file-row empty"
-          style="padding-left: {14 + (depth + 1) * INDENT}px"
-        >
-          No files
         </div>
       {:else}
         {#each files as file}
@@ -365,15 +358,13 @@
   .file-row:hover {
     background: #f8f7f4;
   }
-  .file-row.loading,
-  .file-row.empty {
+  .file-row.loading {
     color: var(--text-3);
     font-style: italic;
     cursor: default;
     border-top: 1px dashed var(--border);
   }
-  .file-row.loading:hover,
-  .file-row.empty:hover {
+  .file-row.loading:hover {
     background: none;
   }
 

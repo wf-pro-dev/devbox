@@ -1,6 +1,7 @@
 import type {
   File, HealthResponse, Peer, Directory, Version, UpdateResponse,
-  SendResult
+  SendResult,
+  SendDirResult
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -139,10 +140,10 @@ export const tagDirectory = (dir: string, tags: string[]): Promise<void> =>
     body: JSON.stringify({ tags }),
   });
 
-export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResult[]> =>
-  request<SendResult[]>(`/dirs/${encodeURIComponent(dir)}/send`, {
+export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendDirResult> =>
+  request<SendDirResult>(`/dirs/${encodeURIComponent(dir)}/send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json',  },
     body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),
   });
 

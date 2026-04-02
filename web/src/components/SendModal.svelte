@@ -17,11 +17,14 @@
   let selected = new Set<string>();
   let destDir = '';
 
-  $: label = file ? file.file_name : (dir ? dir.name : '');
+  $: label = file ? file.file_name : (dir ? dir.prefix : '');
+
+  $: console.log(file, dir);  
 
   onMount(async () => {
     try {
       peers = await listPeers();
+      peers = peers.sort((a, b) => a.status.HostName.localeCompare(b.status.HostName));
     } catch (e: unknown) {
       error = (e as Error).message;
     } finally {
@@ -36,7 +39,7 @@
   }
 
   function selectAll() {
-    selected = new Set(peers.filter(p => p.online).map(p => p.hostname));
+    selected = new Set(peers.filter(p => p.status.Online).map(p => p.status.HostName));
   }
 
   async function deliver() {
@@ -44,13 +47,16 @@
     try {
       const targets = [...selected];
       let res;
+      let resDir;
       if (file) {
         res = await api.sendFile(file.id, targets, false, destDir);
+        results = res ?? [];
+
       } else if (dir) {
-        res = await sendDirectory(dir.id, targets, false, destDir);
+        resDir = await sendDirectory(dir.prefix, targets, false, destDir);
+        results = Object.values(resDir).flat();
       }
-      results = res ?? [];
-      console.log(results)
+     
     } catch (e: unknown) {
       error = (e as Error).message;
     } finally {
@@ -127,13 +133,13 @@
           {#each peers as peer}
             <button
               class="peer-row"
-              class:checked={selected.has(peer.hostname)}
-              class:offline={!peer.online}
-              on:click={() => peer.online && togglePeer(peer.hostname)}
-              disabled={!peer.online}
+              class:checked={selected.has(peer.status.HostName)}
+              class:offline={!peer.status.Online}
+              on:click={() => peer.status.Online && togglePeer(peer.status.HostName)}
+              disabled={!peer.status.Online}
             >
               <span class="peer-check">
-                {#if selected.has(peer.hostname)}
+                {#if selected.has(peer.status.HostName)}
                   <svg viewBox="0 0 14 14" fill="none" width="13" height="13">
                     <rect x="0.7" y="0.7" width="12.6" height="12.6" rx="3" fill="#2563eb" stroke="#2563eb" stroke-width="1"/>
                     <path d="M3.5 7l2.5 2.5L10.5 4.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -144,10 +150,10 @@
                   </svg>
                 {/if}
               </span>
-              <span class="peer-dot" class:online={peer.online}></span>
-              <span class="peer-name">{peer.hostname}</span>
-              <span class="peer-ip">{peer.ip}</span>
-              {#if !peer.online}<span class="peer-status">offline</span>{/if}
+              <span class="peer-dot" class:online={peer.status.Online}></span>
+              <span class="peer-name">{peer.status.HostName}</span>
+              <span class="peer-ip">{peer.status.TailscaleIPs[0]}</span>
+              {#if !peer.status.Online}<span class="peer-status">offline</span>{/if}
             </button>
           {/each}
         {/if}

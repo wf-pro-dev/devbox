@@ -10,6 +10,7 @@
   import SubDirNode from "./SubDirNode.svelte";
   import type { Directory, File, TreeNode } from "../types";
   import { toast } from "svelte-sonner";
+  import SendModal from "./SendModal.svelte";
 
   export let onFileSelect: (f: File) => void = () => {};
   export let onFileDownload: (f: File, e: MouseEvent) => void = () => {};
@@ -20,6 +21,8 @@
   let error = "";
   let expanded = new Set<string>();
   let dirFiles: Record<string, File[] | undefined> = {};
+  let showDeliver = false;
+  let dirToSend: Directory | null = null;
 
   onMount(load);
 
@@ -76,8 +79,9 @@
     });
   }
 
-  function handleDeliver(prefix: string) {
-    alert(`Deliver ${prefix} — wire up DeliverModal`);
+  function handleDeliver(dir: Directory) {
+    dirToSend = dir;
+    showDeliver = true;
   }
 
   function buildTree(flatDirs: Directory[]): TreeNode[] {
@@ -271,6 +275,10 @@
     </div>
   {/if}
 </div>
+
+{#if showDeliver}
+  <SendModal dir={dirToSend} on:close={() => (showDeliver = false)} />
+{/if}
 
 <style>
   .dirs-tab {

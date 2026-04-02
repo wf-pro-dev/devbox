@@ -5,12 +5,13 @@
   import DirFile from './DirFile.svelte';
   import { toast } from "svelte-sonner";
 
+
   export let node: TreeNode;
   export let expanded: Set<string>;
   export let dirFiles: Record<string, File[] | undefined>;
   export let onToggle: (dir: Directory) => void;
   export let onDelete: (prefix: string) => void;
-  export let onDeliver: (prefix: string) => void;
+  export let onDeliver: (dir: Directory) => void;
   export let onFileSelect: (f: File) => void;
   export let onFileDownload: (f: File, e: MouseEvent) => void;
   export let onFileDelete: (f: File) => void;
@@ -120,7 +121,7 @@
       <button
         class="na-btn"
         title="Send directory"
-        on:click={() => onDeliver(node.dir.prefix)}
+        on:click={() => onDeliver(node.dir)}
       >
         <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
           <path d="M2 8h10M8 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -165,10 +166,6 @@
       <div class="file-row loading" style="padding-left: {14 + (depth + 1) * INDENT}px">
         Loading files…
       </div>
-    {:else if files.length === 0}
-      <div class="file-row empty" style="padding-left: {14 + (depth + 1) * INDENT}px">
-        No files
-      </div>
     {:else}
       {#each files as file}
         <DirFile
@@ -182,7 +179,11 @@
     {/if}
   {/if}
 {/if}
+
+
 </div>
+
+
 
 <style>
 .node {
@@ -274,11 +275,11 @@
   box-sizing: border-box;
 }
 .file-row:hover { background: #f8f7f4; }
-.file-row.loading, .file-row.empty {
+.file-row.loading {
   color: var(--text-3); font-style: italic; cursor: default;
   border-top: 1px dashed var(--border);
 }
-.file-row.loading:hover, .file-row.empty:hover { background: none; }
+.file-row.loading:hover { background: none; }
 
 .file-icon { flex-shrink: 0; color: var(--text-3); }
 

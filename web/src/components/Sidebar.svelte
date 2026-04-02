@@ -19,7 +19,9 @@
   onMount(async () => {
     try {
       peers = await listPeers();
-      peers = peers.sort((a, b) => a.hostname.localeCompare(b.hostname));
+      console.log(peers);
+      console.log(health?.caller_ip);
+      peers = peers.filter(p => !p.status.TailscaleIPs.includes(health?.caller_ip) ).sort((a, b) => a.status.HostName.localeCompare(b.status.HostName));
       console.log(peers);
     } catch (e: unknown) {
       console.error(e);
@@ -46,9 +48,9 @@
     {:else}
       {#each peers as peer}
         <div class="machine">
-          <span class="dot" class:online={peer.online}></span>
-          <span class="machine-name">{peer.hostname}</span>
-          <span class="badge" class:offline={!peer.online}>{peer.online ? 'online' : 'offline'}</span>
+          <span class="dot" class:online={peer.status.Online}></span>
+          <span class="machine-name">{peer.status.HostName}</span>
+          <span class="badge" class:offline={!peer.status.Online}>{peer.status.Online ? 'online' : 'offline'}</span>
         </div>
       {:else}
         {#if !health?.caller_host}

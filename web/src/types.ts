@@ -57,9 +57,12 @@ export interface Blob {
   // ---------------------------------------------------------------------------
   
   export interface Peer {
-    hostname: string;
-    ip: string;
-    online: boolean;
+    status: any;
+    tailkit: Tailkit;
+  }
+
+  export interface Tailkit {
+    status: any;
   }
   
   export interface HealthResponse {
@@ -79,8 +82,9 @@ export interface Blob {
     dest_machine?: string;
   }
   
-  export interface SendResponse {
-    results: SendResult[];
+
+  export interface SendDirResult {
+    [key: string]: SendResult[];
   }
   
   // Virtual directory — resolved from path prefix on the server
