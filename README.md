@@ -43,31 +43,38 @@ A `devbox-cli` binary gives you full access from the terminal on any machine.
 
 ## Installation
 
-### CLI (`devbox-cli`)
+### 1. CLI (`devbox-cli`)
 
-Install the CLI on any machine with one command:
-
-```bash
-curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
-```
-
-Supports Linux and macOS on `amd64` and `arm64`. After install, register the node (Optional, for tailkitd tool discovery ):
+Install the CLI on any machine with one command (supports Linux and macOS on `amd64` and `arm64`):
 
 ```bash
-devbox-cli setup
-```
+curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh](https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh) | sh
+````
 
-Set your server URL so you don't have to pass it every time:
+### 2\. Server (Backend + UI)
+
+The primary deployment method runs both the backend and UI on the same machine using a unified Docker Compose file.
+
+**Requirements:**
+
+  - Docker and Docker Compose installed
+  - A [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys)
+
+**Setup:**
+Download the official deployment configuration and start the server:
 
 ```bash
-export DEVBOX_SERVER=https://devbox   # your devbox tsnet hostname on the tailnet
+# Download the unified compose file
+curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml](https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml) -o docker-compose.yml
+
+# Start the server with your Tailscale auth key
+export TS_AUTHKEY="tskey-auth-..."
+docker compose up -d
 ```
 
-### Backend / UI
+> **Note:** Want to run the backend and UI on different machines? Need details on environment variables, data backups, or building from source? Please refer to the [Full Deployment Guide (docs/deployment.md)](https://www.google.com/search?q=docs/deployment.md).
 
-> **Note:** Public Docker images for backend and ui are coming with the first stable release. Until then, build from source — see [docs/deployment.md](docs/deployment.md).
-
----
+-----
 
 ## CLI usage
 
@@ -103,13 +110,13 @@ devbox-cli files rollback deploy.sh 2
 
 ```
 
-For the full command reference see [docs/cli.md](docs/cli.md).
+For the full command reference see [docs/cli.md](https://www.google.com/search?q=docs/cli.md).
 
----
+-----
 
 ## Project structure
 
-```
+```text
 devbox/
 ├── cmd/
 │   ├── devbox/            # server entrypoint
@@ -130,20 +137,20 @@ devbox/
 ├── web/                   # SvelteKit frontend
 ├── docker/                # Dockerfiles + compose
 ├── install.sh             # one-line CLI installer
-└── Makefile.
+└── Makefile
 ```
 
----
+-----
 
 ## Docs
 
 | Document | Description |
 |---|---|
-| [docs/cli.md](docs/cli.md) | Full CLI reference — all subcommands, flags, examples |
-| [docs/deployment.md](docs/deployment.md) | Server setup, Docker Compose, environment variables |
-| [docs/development.md](docs/development.md) | Build from source, local dev workflow, contributing |
+| [docs/cli.md](https://www.google.com/search?q=docs/cli.md) | Full CLI reference — all subcommands, flags, examples |
+| [docs/deployment.md](https://www.google.com/search?q=docs/deployment.md) | Server setup, advanced Docker configurations, environment variables |
+| [docs/development.md](https://www.google.com/search?q=docs/development.md) | Build from source, local dev workflow, contributing |
 
----
+-----
 
 ## License
 
