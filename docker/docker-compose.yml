@@ -27,8 +27,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    secrets:
-      - devbox_ssh_key
 
   # ── Svelte frontend — Nginx ──────────────────────────────────────────────
   ui:
@@ -39,6 +37,8 @@ services:
       - devbox-net
     ports:
       - "80:80"
+    environment:
+      - BACKEND_URL=http://backend:8888
     depends_on:
       - backend
 
@@ -49,7 +49,3 @@ networks:
 volumes:
   devbox-data:
     driver: local
-
-secrets:
-  devbox_ssh_key:
-    file: /etc/devbox/secrets/id_ed25519_devbox
