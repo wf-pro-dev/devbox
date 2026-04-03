@@ -12,7 +12,7 @@ This guide covers everything required to run the devbox server and CLI. The serv
 Install the `devbox-cli` on any machine you want to interact with the server from.
 
 ```bash
-curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh](https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh) | sh
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
 ````
 
 After installing, set your server URL so you don't have to pass it manually on every command:
@@ -48,7 +48,7 @@ This runs both the backend and UI on the same machine using a single `docker-com
 
 ```bash
 # 1. Download the unified compose file
-curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml](https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml) -o docker-compose.yml
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml -o docker-compose.yml
 
 # 2. Start the services
 export TS_AUTHKEY="tskey-auth-..."
@@ -76,7 +76,7 @@ Because the UI is stateless, you can run the backend and UI on entirely separate
 1.  **Start the Backend:**
     Download the backend-only compose file and start it. This exposes port `8888` explicitly.
     ```bash
-    curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.backend.yml](https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.backend.yml) -o docker-compose.yml
+    curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.backend.yml -o docker-compose.yml
     export TS_AUTHKEY="tskey-auth-..."
     docker compose up -d
     ```

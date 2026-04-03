@@ -20,7 +20,7 @@ A `devbox-cli` binary gives you full access from the terminal on any machine.
 - **Directory sync** — push, pull, diff, and sync entire local directories as named collections on the server.
 - **Syntax-highlighted preview** — browse and review files from any machine in the browser with inline editing.
 - **Version history** — every file update is versioned. View the diff, inspect old content, and roll back anytime.
-- **Direct machine delivery** — send files or directories to one or all tailnet peers via [tailkitd](https://github.com/wf-pro-dev/tailkit).
+- **Direct machine delivery** — send files or directories to one or all tailnet peers via [tailkit](https://github.com/wf-pro-dev/tailkit) / [tailkitd](https://github.com/wf-pro-dev/tailkitd).
 - **Zero-config auth** — identity comes from Tailscale. No login form. Any machine on your tailnet is trusted.
 - **CLI-first** — a `devbox-cli` covers every operation: push, pull, tag, diff, rollback, send, and more.
 
@@ -48,7 +48,7 @@ A `devbox-cli` binary gives you full access from the terminal on any machine.
 Install the CLI on any machine with one command (supports Linux and macOS on `amd64` and `arm64`):
 
 ```bash
-curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh](https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh) | sh
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
 ````
 
 ### 2\. Server (Backend + UI)
@@ -65,14 +65,14 @@ Download the official deployment configuration and start the server:
 
 ```bash
 # Download the unified compose file
-curl -fsSL [https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml](https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml) -o docker-compose.yml
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml -o docker-compose.yml
 
 # Start the server with your Tailscale auth key
 export TS_AUTHKEY="tskey-auth-..."
 docker compose up -d
 ```
 
-> **Note:** Want to run the backend and UI on different machines? Need details on environment variables, data backups, or building from source? Please refer to the [Full Deployment Guide (docs/deployment.md)](https://www.google.com/search?q=docs/deployment.md).
+> **Note:** Want to run the backend and UI on different machines? Need details on environment variables, data backups. Please refer to the [Full Deployment Guide](docs/deployment.md).
 
 -----
 
@@ -110,7 +110,7 @@ devbox-cli files rollback deploy.sh 2
 
 ```
 
-For the full command reference see [docs/cli.md](https://www.google.com/search?q=docs/cli.md).
+For the full command reference see [CLI Reference](docs/cli.md).
 
 -----
 
@@ -146,9 +146,8 @@ devbox/
 
 | Document | Description |
 |---|---|
-| [docs/cli.md](https://www.google.com/search?q=docs/cli.md) | Full CLI reference — all subcommands, flags, examples |
-| [docs/deployment.md](https://www.google.com/search?q=docs/deployment.md) | Server setup, advanced Docker configurations, environment variables |
-| [docs/development.md](https://www.google.com/search?q=docs/development.md) | Build from source, local dev workflow, contributing |
+| [docs/cli.md](docs/cli.md) | Full CLI reference — all subcommands, flags, examples |
+| [docs/deployment.md](docs/deployment.md) | Server setup, advanced Docker configurations, environment variables |
 
 -----
 
