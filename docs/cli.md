@@ -22,7 +22,7 @@ export DEVBOX_SERVER=https://devbox   # your devbox hostname on the tailnet
 
 ### `devbox-cli setup`
 
-Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` commands to work.
+Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` commands to work. ! IMPORTATNT. You can skip this step. This is for [tailkit](https://github.com/wf-pro-dev/tailkit)/[tailkitd](https://github.com/wf-pro-dev/tailkit) tool discovery (NOT IMPLEMENTED YET)
 
 ```bash
 devbox-cli setup

@@ -41,35 +41,6 @@ A `devbox-cli` binary gives you full access from the terminal on any machine.
 
 ---
 
-## Architecture overview
-
-```
-┌─────────────────────────────────────────────────┐
-│              Tailscale Network                   │
-│                                                  │
-│   [machine-a]      [machine-b]      [machine-c]  │
-│   browser/CLI  ←→  browser/CLI  ←→  devbox host  │
-│                                                  │
-│   ✦ WireGuard mesh, automatic TLS               │
-│   ✦ Identity resolved from Tailscale node keys  │
-│   ✦ File delivery via tailkitd on each peer     │
-└─────────────────────────────────────────────────┘
-            ↓ all traffic encrypted
-┌─────────────────────────────────────────────────┐
-│   devbox-backend (tsnet + net/http + SQLite)     │
-│   ├── REST API (/files, /dirs, /peers, /search)  │
-│   ├── Tailscale LocalAPI (identity resolution)   │
-│   └── tailkitd agent (file delivery broker)     │
-├─────────────────────────────────────────────────┤
-│   devbox-ui (SvelteKit, served via Nginx)        │
-│   ├── File browser with syntax highlighting      │
-│   ├── Directory tree view                        │
-│   └── Send / deliver to peers                   │
-└─────────────────────────────────────────────────┘
-```
-
----
-
 ## Installation
 
 ### CLI (`devbox-cli`)
@@ -80,7 +51,7 @@ Install the CLI on any machine with one command:
 curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
 ```
 
-Supports Linux and macOS on `amd64` and `arm64`. After install, register the node:
+Supports Linux and macOS on `amd64` and `arm64`. After install, register the node (Optional, for tailkitd tool discovery ):
 
 ```bash
 devbox-cli setup
@@ -89,22 +60,12 @@ devbox-cli setup
 Set your server URL so you don't have to pass it every time:
 
 ```bash
-export DEVBOX_SERVER=https://devbox   # your devbox hostname on the tailnet
+export DEVBOX_SERVER=https://devbox   # your devbox tsnet hostname on the tailnet
 ```
 
 ### Server
 
 > **Note:** Public Docker images are coming with the first stable release. Until then, build from source — see [docs/deployment.md](docs/deployment.md).
-
-Once images are published, the server installs with:
-
-```bash
-# 1. Copy the compose file
-curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.yml -o docker-compose.yml
-
-# 2. Set your Tailscale auth key and start
-TS_AUTHKEY=<your-key> docker compose up -d
-```
 
 See [docs/deployment.md](docs/deployment.md) for full setup, environment variables, and build-from-source instructions.
 
