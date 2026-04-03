@@ -96,6 +96,8 @@ jobs:
             dist/devbox-cli_*.tar.gz
             dist/checksums.txt
             install.sh
+            docker/deploy/docker-compose.yml
+            docker/deploy/docker-compose.backend.yml
 
   # ── Docker images (backend + ui) — minor/major only ───────────────────────
   docker:

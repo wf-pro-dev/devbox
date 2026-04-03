@@ -1,0 +1,27 @@
+services:
+  backend:
+    image: ghcr.io/wf-pro-dev/devbox/backend:latest
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      DEVBOX_HOSTNAME: ${DEVBOX_HOSTNAME:-devbox}
+    volumes:
+      - devbox-data:/data
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  ui:
+    image: ghcr.io/wf-pro-dev/devbox/ui:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_URL=http://backend:8888
+    depends_on:
+      - backend
+
+volumes:
+  devbox-data:

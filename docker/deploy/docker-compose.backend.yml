@@ -1,0 +1,20 @@
+services:
+  backend:
+    image: ghcr.io/wf-pro-dev/devbox/backend:latest
+    restart: unless-stopped
+    ports:
+      - "8888:8888" # Exposed so standalone UI can reach it
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      DEVBOX_HOSTNAME: ${DEVBOX_HOSTNAME:-devbox}
+      DEVBOX_LOCAL_ADDR: 0.0.0.0:8888
+    volumes:
+      - devbox-data:/data
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+volumes:
+  devbox-data:
