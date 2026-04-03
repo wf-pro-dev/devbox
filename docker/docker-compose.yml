@@ -5,6 +5,8 @@ services:
     image: wwwill-1.lab:5000/devbox/backend:${DEVBOX_BACKEND_VERSION:-latest}
     container_name: devbox-backend
     restart: unless-stopped
+    ports:
+      - "8888:8888"
     networks:
       - devbox-net
     environment:
