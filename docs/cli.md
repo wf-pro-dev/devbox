@@ -22,7 +22,7 @@ export DEVBOX_SERVER=https://devbox   # your devbox hostname on the tailnet
 
 ### `devbox-cli setup`
 
-Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` commands to work. ! IMPORTATNT. You can skip this step. This is for [tailkit](https://github.com/wf-pro-dev/tailkit)/[tailkitd](https://github.com/wf-pro-dev/tailkit) tool discovery (NOT IMPLEMENTED YET)
+Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` commands to work. ! IMPORTATNT. You can skip this step. This is for [tailkit](https://github.com/wf-pro-dev/tailkit) / [tailkitd](https://github.com/wf-pro-dev/tailkit) tool discovery (NOT IMPLEMENTED YET)
 
 ```bash
 devbox-cli setup
@@ -198,7 +198,7 @@ devbox-cli files untag abcd1234 nginx
 
 ---
 
-### `files log` / `files history` / `files versions`
+### `files log`
 
 Show version history for a file.
 
@@ -318,7 +318,7 @@ devbox-cli dirs pull nginx --out /tmp/nginx-backup
 
 ### `dirs update`
 
-Sync a local directory to an existing collection on the server. New files are added; existing files with changed content get a new version; files only on the server are left untouched.
+Update a local directory to an existing collection on the server. New files are added; existing files with changed content get a new version; files only on the server are left untouched.
 
 ```bash
 devbox-cli dirs update nginx ./nginx
@@ -395,18 +395,6 @@ devbox-cli dirs send nginx --all
 | `--all` | Deliver to all currently online peers |
 
 Either `--to` or `--all` is required.
-
----
-
-## Peers
-
-### `peers`
-
-List all Tailscale peers visible to the devbox server, with online status.
-
-```bash
-devbox-cli peers
-```
 
 ---
 

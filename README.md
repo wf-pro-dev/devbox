@@ -63,11 +63,9 @@ Set your server URL so you don't have to pass it every time:
 export DEVBOX_SERVER=https://devbox   # your devbox tsnet hostname on the tailnet
 ```
 
-### Server
+### Backend / UI
 
-> **Note:** Public Docker images are coming with the first stable release. Until then, build from source — see [docs/deployment.md](docs/deployment.md).
-
-See [docs/deployment.md](docs/deployment.md) for full setup, environment variables, and build-from-source instructions.
+> **Note:** Public Docker images for backend and ui are coming with the first stable release. Until then, build from source — see [docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -103,8 +101,6 @@ devbox-cli dirs send nginx --all --dest /etc/nginx
 devbox-cli files log deploy.sh
 devbox-cli files rollback deploy.sh 2
 
-# List online tailnet peers
-devbox-cli peers
 ```
 
 For the full command reference see [docs/cli.md](docs/cli.md).
@@ -134,7 +130,7 @@ devbox/
 ├── web/                   # SvelteKit frontend
 ├── docker/                # Dockerfiles + compose
 ├── install.sh             # one-line CLI installer
-└── Makefile
+└── Makefile.
 ```
 
 ---
