@@ -79,7 +79,7 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 	mux.HandleFunc("DELETE /dirs/{dir}", dh.handleDelete)
 	mux.HandleFunc("POST /dirs/{dir}/tags", dh.handleAddTags)
 	mux.HandleFunc("DELETE /dirs/{dir}/tags/{tag}", dh.handleRemoveTag)
-	mux.HandleFunc("GET /dirs/{dir}/diff", dh.handleDiff)
+	mux.HandleFunc("POST /dirs/{dir}/diff", dh.handleDiff)
 	mux.HandleFunc("POST /dirs/{dir}/send", sh.handleSendDir)
 
 	// ── Search ───────────────────────────────────────────────────────────────

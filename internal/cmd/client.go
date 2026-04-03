@@ -19,7 +19,7 @@ import (
 	"github.com/wf-pro-dev/devbox/internal/progress"
 )
 
-var serverURL string
+var SERVER_URL string
 
 func Client() *http.Client {
 	return &http.Client{Timeout: 60 * time.Second}
@@ -45,14 +45,14 @@ func ProgressClient(p *progress.Progress) *http.Client {
 
 func Server() string {
 
-	if serverURL == "" {
-		serverURL = os.Getenv("DEVBOX_SERVER")
+	if SERVER_URL == "" {
+		SERVER_URL = os.Getenv("DEVBOX_SERVER")
 	}
-	return serverURL
+	return SERVER_URL
 }
 
 func SetServer(server string) {
-	serverURL = server
+	SERVER_URL = server
 }
 
 // ── Request helpers ───────────────────────────────────────────────────────────

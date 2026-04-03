@@ -7,8 +7,30 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
+  # ── Determine what changed ────────────────────────────────────────────────
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      push_images: ${{ steps.check.outputs.push_images }}
+    steps:
+      - name: Check if minor or major bump
+        id: check
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Strip leading 'v', then split on '.'
+          VERSION="${TAG#v}"
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          # Only skip image push if PATCH != 0 (i.e. pure patch bump like v1.0.1)
+          if [ "$PATCH" = "0" ]; then
+            echo "push_images=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push_images=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build CLI binaries ────────────────────────────────────────────────────
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -51,6 +73,7 @@ jobs:
           path: ${{ env.ASSET }}
           retention-days: 1
 
+  # ── GitHub Release ────────────────────────────────────────────────────────
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -73,3 +96,73 @@ jobs:
             dist/devbox-cli_*.tar.gz
             dist/checksums.txt
             install.sh
+
+  # ── Docker images (backend + ui) — minor/major only ───────────────────────
+  docker:
+    needs: version-check
+    if: needs.version-check.outputs.push_images == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Backend ────────────────────────────────────────────────────────────
+      - name: Extract backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/devbox/backend
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── UI ─────────────────────────────────────────────────────────────────
+      - name: Extract UI metadata
+        id: meta-ui
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/devbox/ui
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.ui
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-ui.outputs.tags }}
+          labels: ${{ steps.meta-ui.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

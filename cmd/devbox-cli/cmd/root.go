@@ -12,9 +12,9 @@ import (
 // version is stamped at build time:
 //
 //	go build -ldflags="-X github.com/wf-pro-dev/devbox/cmd/devbox-cli/cmd.version=v1.2.3"
-var version = "dev"
+var VERSION = "dev"
 
-var serverURL string
+var SERVER_URL string
 
 var rootCmd = &cobra.Command{
 	Use:   "devbox-cli",
@@ -25,8 +25,8 @@ Files and collections are addressed by ID (UUID prefix) or by path/name.
 When a name is ambiguous the CLI will tell you and ask for the full path or ID.`,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if serverURL != "" {
-			internal.SetServer(serverURL)
+		if SERVER_URL != "" {
+			internal.SetServer(SERVER_URL)
 		}
 	},
 }
@@ -39,7 +39,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "",
+	rootCmd.PersistentFlags().StringVar(&SERVER_URL, "server", "",
 		"devbox server URL (overrides $DEVBOX_SERVER)")
 
 	rootCmd.AddCommand(files.NewCmd())

@@ -20,18 +20,10 @@ func newSetupCmd() *cobra.Command {
 }
 
 func runSetup() error {
-	// exe, err := os.Executable()
-	// if err != nil {
-	// 	return fmt.Errorf("could not resolve binary path: %w", err)
-	// }
-	// // bin, err := filepath.EvalSymlinks(exe)
-	// // if err != nil {
-	// // 	bin = exe
-	// // }
 
 	tool := tailkit.Tool{
 		Name:      "devbox",
-		Version:   version,
+		Version:   VERSION,
 		TsnetHost: "devbox",
 	}
 
