@@ -2,10 +2,10 @@
 
 This guide covers everything required to run the devbox server and CLI. The server is made up of two containers:
 
-- **`devbox-backend`** — the Go API server. Joins your Tailscale network via tsnet and manages data.
-- **`devbox-ui`** — an Nginx container that serves the SvelteKit frontend and proxies API requests.
+* **`devbox-backend`** — the Go API server. Joins your Tailscale network via tsnet and manages data.
+* **`devbox-ui`** — an Nginx container that serves the SvelteKit frontend and proxies API requests.
 
----
+***
 
 ## 1. CLI Installation
 
@@ -13,7 +13,7 @@ Install the `devbox-cli` on any machine you want to interact with the server fro
 
 ```bash
 curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
-````
+```
 
 After installing, set your server URL so you don't have to pass it manually on every command:
 
@@ -23,9 +23,9 @@ export DEVBOX_SERVER=https://devbox   # Replace 'devbox' with your Tailscale hos
 
 *(Optional)* Run `devbox-cli setup` to register the node for tailkitd tool discovery.
 
------
+***
 
-## 2\. Server Deployment Options
+## 2. Server Deployment Options
 
 Devbox offers two deployment paths depending on your architecture needs.
 
@@ -35,14 +35,14 @@ This runs both the backend and UI on the same machine using a single `docker-com
 
 **Why choose this setup?**
 
-  - Easiest "one-command" installation.
-  - Improved security: The backend API port is not exposed to the host machine; the UI proxies traffic internally over Docker's bridge network.
-  - Zero-config networking between the frontend and backend.
+* Easiest "one-command" installation.
+* Improved security: The backend API port is not exposed to the host machine; the UI proxies traffic internally over Docker's bridge network.
+* Zero-config networking between the frontend and backend.
 
 **Requirements:**
 
-  - A machine with Docker and Docker Compose installed.
-  - A [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys) (a reusable auth key is recommended).
+* A machine with Docker and Docker Compose installed.
+* A [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys) (a reusable auth key is recommended).
 
 **Instructions:**
 
@@ -61,34 +61,82 @@ Because the UI is stateless, you can run the backend and UI on entirely separate
 
 **Why choose this setup?**
 
-  - You want to securely host the heavy `backend` (and its SQLite/blob data) on a secure home NAS or private server.
-  - You want to host the lightweight `ui` somewhere public-facing, on a cheap cloud VPS, or at the edge.
+* You want to securely host the heavy `backend` (and its SQLite/blob data) on a secure home NAS or private server.
+* You want to host the lightweight `ui` somewhere public-facing, on a cheap cloud VPS, or at the edge.
 
 **Requirements:**
 
-  - Docker and Docker Compose on the backend host.
-  - Docker on the UI host.
-  - A [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys).
-  - Network access between the UI container and the Backend's exposed API port.
+* Docker and Docker Compose on the backend host.
+* Docker on the UI host.
+* A [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys).
+* Network access between the UI container and the Backend's exposed API port.
 
 **Instructions:**
 
-1.  **Start the Backend:**
-    Download the backend-only compose file and start it. This exposes port `8888` explicitly.
-    ```bash
-    curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.backend.yml -o docker-compose.yml
-    export TS_AUTHKEY="tskey-auth-..."
-    docker compose up -d
-    ```
-2.  **Start the UI (on any machine):**
-    Run the UI container, passing the IP/Domain of your backend instance via the `BACKEND_URL` environment variable.
-    ```bash
+1. **Start the Backend:**
+   Download the backend-only compose file and start it. This exposes port `8888` explicitly.
+   ```bash
+   curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/docker-compose.backend.yml -o docker-compose.yml
+   export TS_AUTHKEY="tskey-auth-..."
+   docker compose up -d
+   ```
+2. **Start the UI:**
+   To run the UI as a standalone container (e.g., on a different machine than the backend):
+   ```bash
     docker run -d -p 80:80 \
-      -e BACKEND_URL="http://<YOUR_BACKEND_IP>:8888" \
-      ghcr.io/wf-pro-dev/devbox/ui:latest
+    --dns 100.100.100.100 \
+    -e BACKEND_URL="https://<DEVBOX-BACKEND-FULL-DOMAIN>" \
+    ghcr.io/wf-pro-dev/devbox/ui:latest
     ```
 
------
+**Important Notes:**
+
+* **BACKEND\_URL**: You must provide the **full Tailscale domain name** of your backend instance, not just the IP address.
+* **Tailscale Access**: Ensure your container can reach the Tailnet. You may need a [Tailscale Auth Key](https://login.tailscale.com/admin/settings/keys) if you are integrating the container directly into your network.
+* **Reverse Proxy Required**: To ensure the backend correctly identifies your Tailscale identity and to avoid 401 errors, you **must** run a reverse proxy in front of this container to pass the correct headers.
+
+#### Minimal Proxy Configurations
+
+Below are the simplest configurations to get the UI service running behind a proxy:
+
+**Nginx**
+
+```nginx
+server {
+    listen 80;
+    server_name <DOMAIN>;
+
+    location / {
+        proxy_pass http://<DEVBOX-UI-ADDRESS>; # Example: http://localhost:80
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+**Caddy**
+
+```caddy
+<DOMAIN> {
+    reverse_proxy <DEVBOX-UI-ADDRESS> {
+        header_up X-Forwarded-For {remote_host}
+    }
+}
+```
+
+**Traefik (Labels)**
+
+```yaml
+services:
+  ui:
+    image: ghcr.io/wf-pro-dev/devbox/ui:latest
+    labels:
+      - "traefik.http.routers.devbox-ui.rule=Host(`your-ui-domain.ts.net`)"
+      - "traefik.http.services.devbox-ui.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.ip-forward.forwardedauth.trustForwardHeader=true"
+```
+
+***
 
 ## Environment Variables
 
@@ -107,9 +155,9 @@ Because the UI is stateless, you can run the backend and UI on entirely separate
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKEND_URL` | *(none)* | Only required if running decoupled. Instructs Nginx where to proxy API requests (e.g., `http://192.168.1.50:8888`). |
+| `BACKEND_URL` | *(none)* | Only required if running decoupled. Instructs Nginx where to proxy API requests (e.g., `https://devbox.tailnet-xyz.ts.net`). |
 
------
+***
 
 ## Data Persistence
 
@@ -127,19 +175,7 @@ All server state lives in the `devbox-data` Docker volume, mounted at `/data` in
 
 Back up the entire volume to preserve all files, history, and the Tailscale node identity.
 
------
-
-## Accessing the UI
-
-Once running, open a browser on any machine on your tailnet and navigate to:
-
-```text
-https://devbox        # or whatever you set DEVBOX_HOSTNAME to
-```
-
-Tailscale issues TLS certificates automatically — no self-signed cert warnings.
-
------
+***
 
 ## Health Check
 
@@ -159,7 +195,7 @@ curl https://devbox/health
 # {"status":"ok","service":"devbox","caller_host":"your-machine","caller_ip":"100.x.x.x"}
 ```
 
------
+***
 
 ## Upgrading
 
@@ -175,4 +211,4 @@ docker compose up -d
 
 The SQLite schema uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` throughout, so new schema additions apply automatically on startup without a manual migration step.
 
------
+***
