@@ -14,6 +14,7 @@ type Blob struct {
 type File struct {
 	ID          string `json:"id"`
 	Path        string `json:"path"`
+	LocalPath   string `json:"local_path"`
 	FileName    string `json:"file_name"`
 	Description string `json:"description"`
 	Language    string `json:"language"`

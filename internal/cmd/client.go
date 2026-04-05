@@ -180,14 +180,18 @@ func UploadFileUpdate(url, localPath, message string) (*http.Response, error) {
 	}
 	defer f.Close()
 
+	fileName := filepath.Base(localPath)
+
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
+
+	mw.WriteField("file_name", fileName)
 
 	if message != "" {
 		mw.WriteField("message", message)
 	}
 
-	part, err := mw.CreateFormFile("file", filepath.Base(localPath))
+	part, err := mw.CreateFormFile("file", fileName)
 	if err != nil {
 		return nil, err
 	}

@@ -2,13 +2,23 @@ package version
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/storage"
 )
+
+// Service handles versioning operations.
+type Service struct {
+	queries     *db.Queries
+	blobs       *storage.BlobStore
+	maxVersions int
+}
 
 const DefaultMaxVersions = 10
 
@@ -25,13 +35,6 @@ func (r Result) String() string {
 		return "updated"
 	}
 	return "unchanged"
-}
-
-// Service handles versioning operations.
-type Service struct {
-	queries     *db.Queries
-	blobs       *storage.BlobStore
-	maxVersions int
 }
 
 // New creates a Service. maxVersions <= 0 uses DefaultMaxVersions.
@@ -198,4 +201,27 @@ func (s *Service) pruneVersions(ctx context.Context, fileID string) {
 			log.Printf("version prune: cleanup blob %s: %v", v.Sha256[:8], err)
 		}
 	}
+}
+
+// ── Internal helpers ───────────────────────────────────────────────────────────
+
+func HashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// StripV removes a leading "v" from a version string like "v3" -> "3".
+func StripV(s string) string {
+	if len(s) > 0 && (s[0] == 'v' || s[0] == 'V') {
+		return s[1:]
+	}
+	return s
 }

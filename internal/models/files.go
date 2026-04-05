@@ -15,7 +15,7 @@ import (
 	"github.com/wf-pro-dev/devbox/types"
 )
 
-func CreateFile(ctx context.Context, store *storage.Store, blobs *storage.BlobStore, searcher *search.Searcher, content io.Reader, filePath string, description string, language string, tags []string) (*types.File, error) {
+func CreateFile(ctx context.Context, store *storage.Store, blobs *storage.BlobStore, searcher *search.Searcher, content io.Reader, filePath string, localPath string, description string, language string, tags []string) (*types.File, error) {
 
 	wr, err := blobs.Write(ctx, content)
 	if err != nil {
@@ -26,6 +26,7 @@ func CreateFile(ctx context.Context, store *storage.Store, blobs *storage.BlobSt
 	file, err := store.Queries.CreateFile(ctx, db.CreateFileParams{
 		ID:          fileID,
 		Path:        filePath,
+		LocalPath:   localPath,
 		FileName:    filepath.Base(filePath),
 		Description: description,
 		Language:    language,

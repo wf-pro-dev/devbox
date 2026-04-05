@@ -1,16 +1,13 @@
 package dirs
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/version"
 )
 
 func DiffCmd() *cobra.Command {
@@ -38,7 +35,7 @@ func DiffCmd() *cobra.Command {
 			}
 			var manifest []localEntry
 			for _, lf := range localFiles {
-				sha, err := hashFile(lf.LocalPath)
+				sha, err := version.HashFile(lf.LocalPath)
 				if err != nil {
 					internal.Warn("hash %s: %v", lf.LocalPath, err)
 					continue
@@ -88,17 +85,4 @@ func DiffCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

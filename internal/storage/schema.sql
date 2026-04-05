@@ -12,6 +12,7 @@
 CREATE TABLE IF NOT EXISTS files (
     id            TEXT    PRIMARY KEY,
     path          TEXT    NOT NULL UNIQUE,
+    local_path    TEXT    NOT NULL DEFAULT '',
     file_name     TEXT    NOT NULL DEFAULT '',
     description   TEXT    NOT NULL DEFAULT '',
     language      TEXT    NOT NULL DEFAULT '',

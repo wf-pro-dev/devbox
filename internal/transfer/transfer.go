@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	tailkit "github.com/wf-pro-dev/tailkit"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 
 	"github.com/wf-pro-dev/devbox/internal/storage"
 )
@@ -48,7 +49,7 @@ type Result struct {
 //   - LocalClient for resolving peer hostnames to MagicDNS names
 //   - The tsnet Dial function for making authenticated connections through
 //     the tailnet without any extra ports or SSH keys
-func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.SendResult {
+func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkitTypes.SendResult {
 
 	peers, err := resolvePeers(ctx, srv)
 	if err != nil {
@@ -80,7 +81,7 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 		return failResults(pkg.Targets, pkg.BlobPath, destPath, err)
 	}
 
-	results := make([]tailkit.SendResult, 0, len(pkg.Targets))
+	results := make([]tailkitTypes.SendResult, 0, len(pkg.Targets))
 	for _, target := range pkg.Targets {
 		dnsName, ok := peers[strings.ToLower(target)]
 		if !ok {
@@ -106,12 +107,12 @@ func Send(ctx context.Context, srv *tailkit.Server, pkg SendPackage) []tailkit.S
 // established through the WireGuard tunnel. tailkitd calls lc.WhoIs on the
 // inbound connection and sees us as a legitimate tailnet peer — no SSH key
 // or separate credential is required.
-func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName, tmpPath string, pkg SendPackage) (*tailkit.SendResult, error) {
+func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName, tmpPath string, pkg SendPackage) (*tailkitTypes.SendResult, error) {
 	// Decompress the blob before sending — blobs are stored zstd-compressed
 	// by the BlobStore but tailkitd expects raw file bytes.
 
 	dest := GetDestPath(pkg)
-	failResult := tailkit.SendResult{
+	failResult := tailkitTypes.SendResult{
 		ToolName:    "devbox",
 		Filename:    pkg.FileName,
 		LocalPath:   pkg.FilePath,
@@ -120,7 +121,7 @@ func sendViaTailkitd(ctx context.Context, srv *tailkit.Server, dnsName, tmpPath 
 		Success:     false,
 	}
 
-	res, err := tailkit.Node(srv, dnsName).Send(ctx, tailkit.SendRequest{
+	res, err := tailkit.Node(srv, dnsName).Files().Send(ctx, tailkitTypes.SendRequest{
 		ToolName:  "devbox",
 		LocalPath: tmpPath,
 		DestPath:  dest,
@@ -173,11 +174,11 @@ func expandTilde(path string) string {
 	return home + path[1:]
 }
 
-func failResults(targets []string, localPath string, writtenTo string, err error) []tailkit.SendResult {
+func failResults(targets []string, localPath string, writtenTo string, err error) []tailkitTypes.SendResult {
 
-	results := make([]tailkit.SendResult, len(targets))
+	results := make([]tailkitTypes.SendResult, len(targets))
 	for i := range results {
-		results[i] = tailkit.SendResult{
+		results[i] = tailkitTypes.SendResult{
 			LocalPath:   localPath,
 			WrittenTo:   writtenTo,
 			DestMachine: targets[i],

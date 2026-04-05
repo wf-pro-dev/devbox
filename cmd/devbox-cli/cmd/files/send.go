@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/tailkit"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
 func SendCmd() *cobra.Command {
@@ -50,7 +50,7 @@ func SendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var results []tailkit.SendResult
+			var results []tailkitTypes.SendResult
 			if err := internal.Decode(resp, &results); err != nil {
 				return err
 			}
@@ -64,7 +64,7 @@ func SendCmd() *cobra.Command {
 	return c
 }
 
-func printResults(results []tailkit.SendResult) {
+func printResults(results []tailkitTypes.SendResult) {
 	ok, fail := 0, 0
 	fmt.Println()
 	for _, result := range results {

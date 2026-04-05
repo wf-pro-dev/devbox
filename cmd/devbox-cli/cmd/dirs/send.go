@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/tailkit"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
 // key is the dest manchine value is the results
-type SendDirResult map[string][]tailkit.SendResult
+type SendDirResult map[string][]tailkitTypes.SendResult
 
 func SendCmd() *cobra.Command {
 	var to, dest string

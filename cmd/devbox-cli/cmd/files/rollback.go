@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/version"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -25,7 +26,7 @@ func RollbackCmd() *cobra.Command {
 				return err
 			}
 
-			vStr := stripV(args[1])
+			vStr := version.StripV(args[1])
 			v, err := strconv.ParseInt(vStr, 10, 64)
 			if err != nil {
 				return fmt.Errorf("invalid version %q: must be a number", args[1])

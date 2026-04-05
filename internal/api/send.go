@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tailkit "github.com/wf-pro-dev/tailkit"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/storage"
@@ -87,10 +88,10 @@ func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// key is the dest manchine value is the results
-	type SendDirResult map[string][]tailkit.SendResult
+	type SendDirResult map[string][]tailkitTypes.SendResult
 
 	const TAILKIT_INBOX = "/var/lib/tailkitd/recv/"
-	var allResults SendDirResult = make(map[string][]tailkit.SendResult)
+	var allResults SendDirResult = make(map[string][]tailkitTypes.SendResult)
 	for _, f := range files {
 
 		reqDestDir := req.DestDir

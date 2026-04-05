@@ -49,6 +49,13 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 		searcher: searcher,
 	}
 
+	drh := &driftHandler{
+		versions: verSvc,
+		store:    store,
+		blobs:    blobs,
+		fleet:    srv,
+	}
+
 	mux := http.NewServeMux()
 
 	// ── Health ───────────────────────────────────────────────────────────────
@@ -70,6 +77,9 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 	mux.HandleFunc("POST /files/{id}/versions/{n}/rollback", fh.handleRollback)
 	mux.HandleFunc("GET /files/{id}/diff", fh.handleDiff)
 	mux.HandleFunc("POST /files/{id}/send", sh.handleSendFile)
+	mux.HandleFunc("GET /files/{id}/status", drh.handleGetFileStatus)
+	mux.HandleFunc("GET /files/{id}/diff/node", drh.handleDiffNode)
+	mux.HandleFunc("POST /files/{id}/diff/local", drh.handleDiffLocal)
 
 	// ── Dirs ─────────────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /dirs", dh.handleList)

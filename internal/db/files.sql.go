@@ -33,14 +33,15 @@ func (q *Queries) CountFilesByPrefix(ctx context.Context, dollar_1 *string) (int
 }
 
 const createFile = `-- name: CreateFile :one
-INSERT INTO files (id, path, file_name, description, language, size, sha256, uploaded_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
+INSERT INTO files (id, path, local_path, file_name, description, language, size, sha256, uploaded_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type CreateFileParams struct {
 	ID          string `json:"id"`
 	Path        string `json:"path"`
+	LocalPath   string `json:"local_path"`
 	FileName    string `json:"file_name"`
 	Description string `json:"description"`
 	Language    string `json:"language"`
@@ -53,6 +54,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	row := q.db.QueryRowContext(ctx, createFile,
 		arg.ID,
 		arg.Path,
+		arg.LocalPath,
 		arg.FileName,
 		arg.Description,
 		arg.Language,
@@ -64,6 +66,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	err := row.Scan(
 		&i.ID,
 		&i.Path,
+		&i.LocalPath,
 		&i.FileName,
 		&i.Description,
 		&i.Language,
@@ -115,7 +118,7 @@ func (q *Queries) DeleteFilesByPrefix(ctx context.Context, dollar_1 *string) err
 }
 
 const getFiles = `-- name: GetFiles :many
-SELECT id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
+SELECT id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
 WHERE id IN (/*SLICE:ids*/?)
 ORDER BY path ASC
 `
@@ -142,6 +145,7 @@ func (q *Queries) GetFiles(ctx context.Context, ids []string) ([]File, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Path,
+			&i.LocalPath,
 			&i.FileName,
 			&i.Description,
 			&i.Language,
@@ -166,7 +170,7 @@ func (q *Queries) GetFiles(ctx context.Context, ids []string) ([]File, error) {
 }
 
 const getFilesByPath = `-- name: GetFilesByPath :many
-SELECT id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
+SELECT id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at FROM files
 WHERE path IN (/*SLICE:paths*/?)
 ORDER BY path ASC
 `
@@ -193,6 +197,7 @@ func (q *Queries) GetFilesByPath(ctx context.Context, paths []string) ([]File, e
 		if err := rows.Scan(
 			&i.ID,
 			&i.Path,
+			&i.LocalPath,
 			&i.FileName,
 			&i.Description,
 			&i.Language,
@@ -247,7 +252,7 @@ func (q *Queries) ListDistinctDirs(ctx context.Context) ([]string, error) {
 }
 
 const listFiles = `-- name: ListFiles :many
-SELECT DISTINCT f.id, f.path, f.file_name, f.description, f.language, f.size, f.sha256, f.uploaded_by, f.version, f.created_at, f.updated_at
+SELECT DISTINCT f.id, f.path, f.local_path, f.file_name, f.description, f.language, f.size, f.sha256, f.uploaded_by, f.version, f.created_at, f.updated_at
 FROM files f
 LEFT JOIN file_tags ft ON ft.file_id = f.id
 LEFT JOIN tags      t  ON t.id = ft.tag_id
@@ -280,6 +285,7 @@ func (q *Queries) ListFiles(ctx context.Context, arg ListFilesParams) ([]File, e
 		if err := rows.Scan(
 			&i.ID,
 			&i.Path,
+			&i.LocalPath,
 			&i.FileName,
 			&i.Description,
 			&i.Language,
@@ -309,7 +315,7 @@ SET path       = ?,
     file_name  = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id = ?
-RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
+RETURNING id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type MoveFileParams struct {
@@ -324,6 +330,7 @@ func (q *Queries) MoveFile(ctx context.Context, arg MoveFileParams) (File, error
 	err := row.Scan(
 		&i.ID,
 		&i.Path,
+		&i.LocalPath,
 		&i.FileName,
 		&i.Description,
 		&i.Language,
@@ -345,7 +352,7 @@ SET sha256 = ?,
     uploaded_by = ?,
     updated_at  = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id = ?
-RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
+RETURNING id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type UpdateFileContentParams struct {
@@ -368,6 +375,7 @@ func (q *Queries) UpdateFileContent(ctx context.Context, arg UpdateFileContentPa
 	err := row.Scan(
 		&i.ID,
 		&i.Path,
+		&i.LocalPath,
 		&i.FileName,
 		&i.Description,
 		&i.Language,
@@ -387,7 +395,7 @@ SET description = ?,
     language    = ?,
     updated_at  = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 WHERE id = ?
-RETURNING id, path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
+RETURNING id, path, local_path, file_name, description, language, size, sha256, uploaded_by, version, created_at, updated_at
 `
 
 type UpdateFileMetaParams struct {
@@ -402,6 +410,7 @@ func (q *Queries) UpdateFileMeta(ctx context.Context, arg UpdateFileMetaParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.Path,
+		&i.LocalPath,
 		&i.FileName,
 		&i.Description,
 		&i.Language,

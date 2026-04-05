@@ -5,7 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	tailkit "github.com/wf-pro-dev/tailkit"
+	"github.com/wf-pro-dev/tailkit"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -21,7 +22,7 @@ func newSetupCmd() *cobra.Command {
 
 func runSetup() error {
 
-	tool := tailkit.Tool{
+	tool := tailkitTypes.Tool{
 		Name:      "devbox",
 		Version:   VERSION,
 		TsnetHost: "devbox",

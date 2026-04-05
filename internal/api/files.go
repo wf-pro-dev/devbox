@@ -151,6 +151,11 @@ func (h *filesHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		filePath = header.Filename
 	}
 
+	localPath := r.FormValue("local_path")
+	if localPath == "" {
+		localPath = ""
+	}
+
 	language := r.FormValue("language")
 	if language == "" {
 		language = detectLanguage(header.Filename)
@@ -161,6 +166,7 @@ func (h *filesHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	file, err := models.CreateFile(ctx, h.store, h.blobs, h.searcher,
 		formFile,
 		filePath,
+		localPath,
 		r.FormValue("description"),
 		language,
 		tags,

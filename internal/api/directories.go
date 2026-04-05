@@ -175,6 +175,7 @@ func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	tagNames := splitTags(r.FormValue("tags"))
 
 	relPaths := r.MultipartForm.Value["path[]"]
+	localPaths := r.MultipartForm.Value["local_path[]"]
 	formFiles := r.MultipartForm.File["file"]
 
 	var created []types.File
@@ -200,6 +201,7 @@ func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.searcher,
 			f,
 			fullPath,
+			localPaths[i],
 			"",
 			detectLanguage(fh.Filename),
 			tagNames,
@@ -239,6 +241,7 @@ func (h *dirsHandler) handleSync(w http.ResponseWriter, r *http.Request) {
 	message := r.FormValue("message")
 	uploadedBy := callerHost(ctx)
 	relPaths := r.MultipartForm.Value["path[]"]
+	localPaths := r.MultipartForm.Value["local_path[]"]
 	formFiles := r.MultipartForm.File["file"]
 
 	// Index existing files under the prefix by their full path.
@@ -292,6 +295,7 @@ func (h *dirsHandler) handleSync(w http.ResponseWriter, r *http.Request) {
 			_, err = h.store.Queries.CreateFile(ctx, db.CreateFileParams{
 				ID:         fileID,
 				Path:       fullPath,
+				LocalPath:  localPaths[i],
 				FileName:   filepath.Base(relPath),
 				Language:   detectLanguage(fh.Filename),
 				Size:       wr.Size,
