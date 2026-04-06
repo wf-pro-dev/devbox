@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
@@ -32,21 +33,33 @@ type DiffResult struct {
 // ── Layer 1: Fast Check (Status) ─────────────────────────────────────────────
 
 // CheckFleetDrift performs concurrent comparisons across the fleet using tailkit fan-out.
-func (s *Service) CheckFleetDrift(ctx context.Context, fileID string, peers []tailkitTypes.Peer) ([]StatusResult, error) {
+func (s *Service) CheckFleetDrift(ctx context.Context, srv *tailkit.Server, fileID string, peers []tailkitTypes.Peer) ([]StatusResult, error) {
 	file, err := s.getFile(ctx, fileID)
 	if err != nil {
 		return nil, err
 	}
+	var results []StatusResult
+	validPeers := []tailkitTypes.Peer{}
+
+	for _, peer := range peers {
+		if peer.Tailkit == nil {
+			results = append(results, StatusResult{Hostname: peer.Status.HostName, Status: "NO TAILKITD FOUND", LocalPath: file.LocalPath})
+			continue
+		} else {
+			validPeers = append(validPeers, peer)
+		}
+	}
 
 	// 1. Fetch fleet configurations concurrently using the FleetClient
-	fleet := tailkit.Nodes(nil, peers) // srv is nil as it's typically managed globally or passed
+	fleet := tailkit.Nodes(srv, validPeers)
 	configs, errs := fleet.Files().Config(ctx)
 
-	var results []StatusResult
-	for _, peer := range peers {
+	for _, peer := range validPeers {
 		node := peer.Status.HostName
+		log.Printf("getting file config for node %s", node)
 
 		if err, ok := errs[node]; ok {
+			log.Printf("error getting file config for node %s: %v", node, err)
 			results = append(results, StatusResult{Hostname: node, Error: err.Error()})
 			continue
 		}
@@ -54,16 +67,20 @@ func (s *Service) CheckFleetDrift(ctx context.Context, fileID string, peers []ta
 		// 2. Verify path sharing using tailkit's MatchPathRule
 		cfg := configs[node]
 		rule, _, found := cfg.MatchPathRule(file.LocalPath)
+		log.Printf("rule for node %s: %+v", node, rule)
 		if !found || !rule.Share {
+			log.Printf("path %s is not opted-in for auditing on node %s", file.LocalPath, node)
 			continue // Path is not opted-in for auditing
 		}
 
 		// 3. Perform Layer 1 Stat check
-		stat, err := tailkit.Node(nil, node).Files().Stat(ctx, file.LocalPath)
+		stat, err := tailkit.Node(srv, node).Files().Stat(ctx, file.LocalPath)
 		if err != nil {
+			log.Printf("error getting file stat for node %s: %v", node, err)
 			results = append(results, StatusResult{Hostname: node, Status: "NOT FOUND", LocalPath: file.LocalPath})
 			continue
 		}
+		log.Printf("file stat for node %s: %+v", node, stat)
 
 		status := "DIFFERS"
 		if stat.SHA256 == file.Sha256 {
@@ -85,7 +102,7 @@ func (s *Service) CheckFleetDrift(ctx context.Context, fileID string, peers []ta
 // ── Layer 2: Deep Check (Diff) ───────────────────────────────────────────────
 
 // DiffNodeContent handles high-resolution diffs between vault and node.
-func (s *Service) DiffNodeContent(ctx context.Context, fileID, versionStr, nodeName string) (DiffResult, error) {
+func (s *Service) DiffNodeContent(ctx context.Context, srv *tailkit.Server, fileID, versionStr, nodeName string) (DiffResult, error) {
 	file, err := s.getFile(ctx, fileID)
 	if err != nil {
 		return DiffResult{}, err
@@ -105,7 +122,7 @@ func (s *Service) DiffNodeContent(ctx context.Context, fileID, versionStr, nodeN
 
 	// 2. Fetch Remote Node content via tailkit
 	// nodeReader is expected to be returned as an io.ReadCloser from a tailored tailkit helper
-	nodeReader, err := s.openNodeReader(ctx, nodeName, file.LocalPath)
+	nodeReader, err := s.openNodeReader(ctx, srv, nodeName, file.LocalPath)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("node fetch: %w", err)
 	}
@@ -169,9 +186,9 @@ func (s *Service) findMatchingVersion(ctx context.Context, fileID, sha string) (
 	return 0, fmt.Errorf("no match")
 }
 
-func (s *Service) openNodeReader(ctx context.Context, node, path string) (io.ReadCloser, error) {
+func (s *Service) openNodeReader(ctx context.Context, srv *tailkit.Server, node, path string) (io.ReadCloser, error) {
 	// Helper to fetch content as a stream from the node
-	content, err := tailkit.Node(nil, node).Files().Read(ctx, path)
+	content, err := tailkit.Node(srv, node).Files().Read(ctx, path)
 	if err != nil {
 		return nil, err
 	}

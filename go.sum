@@ -220,6 +220,8 @@ github.com/wf-pro-dev/tailkit v0.3.0 h1:dcHEE/jDxdlI9iL/59qtEOPDaFUh6xAE7SS0qR3i
 github.com/wf-pro-dev/tailkit v0.3.0/go.mod h1:6DxyOgVxGbYa5Pn3vbY+HWUlo9PQ5erMq28qd0au208=
 github.com/wf-pro-dev/tailkit v0.3.2 h1:6WnIZ4C4HCjnP49z79l88QhvPesQWnhfxuX45gRtDEo=
 github.com/wf-pro-dev/tailkit v0.3.2/go.mod h1:6DxyOgVxGbYa5Pn3vbY+HWUlo9PQ5erMq28qd0au208=
+github.com/wf-pro-dev/tailkit v0.3.3 h1:O0vgB6xycJd0xDaV4N2qxgtBFriMBbqdQQSZk93B4YM=
+github.com/wf-pro-dev/tailkit v0.3.3/go.mod h1:6DxyOgVxGbYa5Pn3vbY+HWUlo9PQ5erMq28qd0au208=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

@@ -2,6 +2,7 @@ package files
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
@@ -20,12 +21,17 @@ func PushCmd() *cobra.Command {
   devbox-cli files push nginx/default.conf --collection nginx --path nginx/conf.d/default.conf`,
 		RunE: func(c *cobra.Command, args []string) error {
 			localPath := args[0]
+			absolutePath, err := filepath.Abs(localPath)
+			if err != nil {
+				return err
+			}
 			fields := map[string]string{
 				"description": desc,
 				"language":    lang,
 				"tags":        tags,
 				"collection":  collection,
 				"path":        path,
+				"local_path":  absolutePath,
 			}
 			resp, err := internal.UploadFile(internal.Server()+"/files", localPath, fields)
 			if err != nil {

@@ -149,7 +149,7 @@ func UploadFile(url, localPath string, fields map[string]string) (*http.Response
 	connProgress := progresManager.Create(connID, totalSize)
 	defer progresManager.Remove(connID)
 
-	connBar := progressbar.New64(totalSize)
+	connBar := progressbar.DefaultBytes(totalSize, "Uploading file")
 
 	connProgress.OnProgress(func(progress *progress.Progress) {
 		snapshot := progress.Snapshot()
@@ -166,7 +166,7 @@ func UploadFile(url, localPath string, fields map[string]string) (*http.Response
 		return nil, fmt.Errorf("POST %s: %w", url, err)
 	}
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("POST %s: %s", url, resp.Status)
 	}
 	return resp, nil

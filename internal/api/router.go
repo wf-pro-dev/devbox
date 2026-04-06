@@ -53,7 +53,7 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 		versions: verSvc,
 		store:    store,
 		blobs:    blobs,
-		fleet:    srv,
+		srv:      srv,
 	}
 
 	mux := http.NewServeMux()

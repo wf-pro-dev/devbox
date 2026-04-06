@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -42,9 +43,8 @@ It only checks nodes where the directory is explicitly marked as 'share = true' 
 			// Add optional node filtering if flags are provided
 			if len(nodes) > 0 {
 				q := url.Values{}
-				for _, n := range nodes {
-					q.Add("nodes", n)
-				}
+				nodesString := strings.Join(nodes, ",")
+				q.Add("nodes", nodesString)
 				u += "?" + q.Encode()
 			}
 

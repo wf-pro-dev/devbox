@@ -9,7 +9,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.10.2
-	github.com/wf-pro-dev/tailkit v0.3.2
+	github.com/wf-pro-dev/tailkit v0.3.3
 )
 
 require (

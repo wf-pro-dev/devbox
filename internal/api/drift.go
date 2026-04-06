@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -18,7 +20,7 @@ type driftHandler struct {
 	versions *version.Service
 	store    *storage.Store
 	blobs    *storage.BlobStore
-	fleet    *tailkit.Server
+	srv      *tailkit.Server
 }
 
 // GetFileStatus handles GET /files/:id/status.
@@ -27,22 +29,19 @@ func (h *driftHandler) handleGetFileStatus(w http.ResponseWriter, r *http.Reques
 	id := r.PathValue("id")
 	ctx := r.Context()
 
-	peers, err := tailkit.OnlinePeers(ctx, h.fleet)
+	peers, err := tailkit.OnlinePeers(ctx, h.srv)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	targetPeers := make([]tailkitTypes.Peer, 0, len(peers))
+	targetPeers := []tailkitTypes.Peer{}
 
 	nodes := r.URL.Query().Get("nodes")
-	if nodes == "" {
-		jsonError(w, "nodes parameter is required", http.StatusBadRequest)
-		return
-	}
+	if nodes != "" {
+		nodesSlice := strings.Split(nodes, ",")
 
-	nodesSlice := strings.Split(nodes, ",")
+		log.Printf("nodeSlice: %+v", nodesSlice)
 
-	if len(nodesSlice) != 0 {
 		for _, peer := range peers {
 			if slices.Contains(nodesSlice, peer.Status.HostName) {
 				targetPeers = append(targetPeers, peer)
@@ -53,7 +52,7 @@ func (h *driftHandler) handleGetFileStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	// 2. Delegate to the version service for drift logic
-	results, err := h.versions.CheckFleetDrift(ctx, id, targetPeers)
+	results, err := h.versions.CheckFleetDrift(ctx, h.srv, id, targetPeers)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -75,7 +74,7 @@ func (h *driftHandler) handleDiffNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	result, err := h.versions.DiffNodeContent(ctx, id, ver, node)
+	result, err := h.versions.DiffNodeContent(ctx, h.srv, id, ver, node)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -120,8 +119,8 @@ func (h *driftHandler) handleDiffLocal(w http.ResponseWriter, r *http.Request) {
 	result, err := h.versions.GenerateDiff(
 		io.NopCloser(bytes.NewReader(src)),
 		io.NopCloser(vaultReader),
-		"vault:latest",
-		"local:"+fileMeta.FileName,
+		fmt.Sprintf("devbox:%s@latest", fileMeta.ID),
+		fmt.Sprintf("local:%s", fileMeta.FileName),
 	)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)

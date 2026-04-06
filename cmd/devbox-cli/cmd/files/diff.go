@@ -60,7 +60,7 @@ func diffLocal(f *types.File, localPath string) error {
 	u := internal.Server() + "/files/" + url.PathEscape(f.ID) + "/diff/local"
 
 	// Upload local file to server-side diff engine to get Unified Diff
-	resp, err := internal.UploadFileUpdate(u, localPath, "")
+	resp, err := internal.UploadFile(u, localPath, map[string]string{"local_path": localPath})
 	if err != nil {
 		return fmt.Errorf("local diff failed: %w", err)
 	}
