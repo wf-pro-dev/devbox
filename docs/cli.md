@@ -22,7 +22,7 @@ export DEVBOX_SERVER=https://devbox   # your devbox hostname on the tailnet
 
 ### `devbox-cli setup`
 
-Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` commands to work. ! IMPORTATNT. You can skip this step. This is for [tailkit](https://github.com/wf-pro-dev/tailkit) / [tailkitd](https://github.com/wf-pro-dev/tailkit) tool discovery (NOT IMPLEMENTED YET)
+Register this machine with `tailkitd`. Run once after installing the CLI — required for the `send` and `status` commands to work.
 
 ```bash
 devbox-cli setup
@@ -55,7 +55,7 @@ devbox-cli files ls --dir nginx
 
 ### `files push`
 
-Upload a file to the server.
+Upload a file to the server. The CLI automatically resolves the file to its absolute local path (e.g. `./deploy.sh` becomes `/home/user/projects/deploy.sh`) and stores it as `local_path` in the vault. This path is used later by `files status` and `files diff --node` to locate the file on remote nodes.
 
 ```bash
 devbox-cli files push deploy.sh
@@ -213,7 +213,7 @@ Displays each version: number, size, SHA-256 (short), date, and message.
 
 ### `files diff`
 
-Compare versions or a local file against the stored version.
+Compare versions, a local file, or a remote node against the vault.
 
 ```bash
 # Current version vs previous version
@@ -224,7 +224,17 @@ devbox-cli files diff deploy.sh v2 v1
 
 # Local file vs stored version
 devbox-cli files diff deploy.sh ./deploy.sh
+
+# Vault vs a specific remote node (drift deep-check)
+devbox-cli files diff nginx.conf --node vps-1
+devbox-cli files diff nginx.conf v3 --node vps-1
 ```
+
+| Flag | Description |
+|---|---|
+| `--node <hostname>` | Compare the vault file against the live file on a specific tailnet node. Fetches the remote content via tailkitd and outputs a unified diff. |
+
+The `--node` flag performs a Layer 2 deep check — it fetches the full file content from the remote node at `local_path` and generates a standard unified diff (`---`/`+++`/`@@` format).
 
 ---
 
@@ -240,6 +250,34 @@ devbox-cli files rollback deploy.sh v2 --force
 | Flag | Description |
 |---|---|
 | `-f, --force` | Skip confirmation prompt |
+
+---
+
+### `files status`
+
+Check whether a vault file matches the physical file on nodes across the tailnet. Only nodes where the file's directory is opted in via `share = true` in their `files.toml` are checked.
+
+```bash
+devbox-cli files status nginx.conf
+devbox-cli files status 550e8400-e29b-41d4-a716 --nodes vps-1,vps-2
+```
+
+| Flag | Description |
+|---|---|
+| `--nodes <hosts>` | Comma-separated list of hostnames to check (default: all online peers) |
+
+Output:
+
+```
+HOSTNAME          STATUS                  LOCAL PATH
+-------------------------------------------------------------
+vps-1             MATCH (latest)          /etc/nginx/nginx.conf
+vps-2             MATCH (v3)              /etc/nginx/nginx.conf
+vps-3             DIFFERS                 /etc/nginx/nginx.conf
+db-master         NOT FOUND               /etc/nginx/nginx.conf
+```
+
+Status values: `MATCH (latest)` — matches the current vault version; `MATCH (vN)` — matches a previous version; `DIFFERS` — SHA-256 does not match any vault version; `NOT FOUND` — file does not exist on the node or the node has no tailkitd.
 
 ---
 
