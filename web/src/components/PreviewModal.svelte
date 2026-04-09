@@ -4,6 +4,8 @@
   import SendModal from "./SendModal.svelte";
   import UpdateFileModal from "./UpdateFileModal.svelte";
   import VersionRow from "./VersionRow.svelte";
+  import FleetStatusTab from "./FleetStatusTab.svelte";
+  import DiffTab from "./DiffTab.svelte";
   import type { File, Version, UpdateResponse } from "../types";
   import { toast } from "svelte-sonner";
 
@@ -19,8 +21,11 @@
     tagsUpdated: File;
   }>();
 
-  type Tab = "preview" | "meta" | "versions";
-  let tab = "preview";
+  type Tab = "preview" | "meta" | "versions" | "status" | "diff";
+  let tab: Tab = "preview";
+
+  // Diff tab: node pre-selected when "View diff →" is clicked from Status tab
+  let diffPreselectedNode = '';
 
   // Preview tab state
   let content = "";
@@ -242,6 +247,13 @@
     }
   }
 
+  // ── Status → Diff cross-tab navigation ────────────────────────────────────
+
+  function handleDiffNode(node: string) {
+    diffPreselectedNode = node;
+    tab = 'diff';
+  }
+
   // ── Misc ───────────────────────────────────────────────────────────────────
 
   function onKey(e: KeyboardEvent) {
@@ -249,9 +261,10 @@
       dispatch("close");
   }
 
-  function onTabChange(t: string) {
+  function onTabChange(t: Tab) {
     tab = t;
     if (t === "versions") loadVersions();
+    if (t !== "diff") diffPreselectedNode = '';
   }
 
   $: file.id, loadContent();
@@ -347,12 +360,22 @@
 
     <!-- ── Tabs ─────────────────────────────────────────────────────────── -->
     <div class="tab-bar">
-      {#each ["preview", "meta", "versions"] as t}
+      {#each (["preview", "meta", "versions", "status", "diff"] as Tab[]) as t}
         <button
           class="tab"
           class:active={tab === t}
           on:click={() => onTabChange(t)}
         >
+          {#if t === "status"}
+            <svg viewBox="0 0 10 10" fill="none" width="9" height="9" style="opacity:0.6">
+              <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.1"/>
+              <circle cx="5" cy="5" r="1.5" fill="currentColor"/>
+            </svg>
+          {:else if t === "diff"}
+            <svg viewBox="0 0 10 10" fill="none" width="9" height="9" style="opacity:0.6">
+              <path d="M1 3h4M1 7h6M7 1.5v7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+            </svg>
+          {/if}
           {t.charAt(0).toUpperCase() + t.slice(1)}
           {#if t === "versions" && versions.length > 0}
             <span class="tab-count">{versions.length}</span>
@@ -491,6 +514,11 @@
             <span class="ml">Path</span>
             <span class="mv mono">{file.path}</span>
 
+            {#if file.local_path}
+              <span class="ml">Local path</span>
+              <span class="mv mono sha">{file.local_path}</span>
+            {/if}
+
             <span class="ml">Size</span>
             <span class="mv">{formatBytes(file.size)}</span>
 
@@ -622,6 +650,18 @@
             </table>
           {/if}
         </div>
+
+        <!-- STATUS TAB -->
+      {:else if tab === "status"}
+        <FleetStatusTab
+          {file}
+          on:diffNode={(e) => handleDiffNode(e.detail)}
+        />
+
+        <!-- DIFF TAB -->
+      {:else if tab === "diff"}
+        <DiffTab {file} preselectedNode={diffPreselectedNode} />
+
       {/if}
     </div>
   </div>
@@ -654,7 +694,7 @@
     background: white;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    width: min(860px, 94vw);
+    width: min(920px, 96vw);
     height: 86vh;
     display: flex;
     flex-direction: column;

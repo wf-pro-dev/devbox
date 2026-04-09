@@ -1,7 +1,7 @@
 import type {
   File, HealthResponse, Peer, Directory, Version, UpdateResponse,
-  SendResult,
-  SendDirResult
+  SendResult, SendDirResult,
+  NodeDriftResult, DiffResult,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -107,13 +107,56 @@ export const api = {
   rollback: (id: string, n: number): Promise<File> =>
     request<File>(`/files/${id}/versions/${n}/rollback`, { method: 'POST' }),
 
-  /** POST /files/{id}/deliver */
+  /** POST /files/{id}/send */
   sendFile: (id: string, targets: string[], broadcast = false, destDir = ''): Promise<SendResult[]> =>
     request<SendResult[]>(`/files/${id}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),
     }),
+
+  // ── Drift / Status ─────────────────────────────────────────────────────────
+
+  /**
+   * GET /files/{id}/status[?nodes=host1,host2]
+   *
+   * Returns one entry per online tailkit peer (or filtered subset).
+   * Each entry: { hostname, status, local_path }
+   * status is a raw string: "MATCH (latest)", "NOT FOUND", "NO TAILKITD FOUND", etc.
+   */
+  getFileStatus: (id: string, nodes?: string[]): Promise<NodeDriftResult[]> => {
+    const qs = new URLSearchParams();
+    if (nodes && nodes.length > 0) qs.set('nodes', nodes.join(','));
+    const query = qs.toString() ? `?${qs}` : '';
+    return request<NodeDriftResult[]>(`/files/${id}/status${query}`);
+  },
+
+  // ── Diff ───────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /files/{id}/diff/node?node=hostname[&version=N]
+   *
+   * Returns: { unified, identical, vault_label, node_label }
+   */
+  diffNode: (id: string, node: string, version?: number): Promise<DiffResult> => {
+    const qs = new URLSearchParams({ node });
+    if (version !== undefined) qs.set('version', String(version));
+    return request<DiffResult>(`/files/${id}/diff/node?${qs}`);
+  },
+
+  /**
+   * POST /files/{id}/diff/local   (multipart/form-data, field name: "file")
+   *
+   * Returns: { unified, identical, vault_label, node_label }
+   */
+  diffLocal: (id: string, localFile: globalThis.File): Promise<DiffResult> => {
+    const form = new FormData();
+    form.append('file', localFile);
+    return request<DiffResult>(`/files/${id}/diff/local`, {
+      method: 'POST',
+      body: form,
+    });
+  },
 
   /** GET /health */
   health: (): Promise<HealthResponse> =>
@@ -143,7 +186,7 @@ export const tagDirectory = (dir: string, tags: string[]): Promise<void> =>
 export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendDirResult> =>
   request<SendDirResult>(`/dirs/${encodeURIComponent(dir)}/send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',  },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),
   });
 

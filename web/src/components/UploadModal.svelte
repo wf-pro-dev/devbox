@@ -60,7 +60,7 @@
       form.append('description', description);
       form.append('tags', tags);
       form.append('path', prefix + '/' + files[0].name);
-      form.append('local_path', files[0].name);
+      form.append('local_path', files[0].webkitRelativePath);
       if (language) form.append('language', language);
       dispatch('uploaded', await api.uploadFile(form));
     } catch (e: unknown) {
