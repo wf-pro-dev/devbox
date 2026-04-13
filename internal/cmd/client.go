@@ -230,6 +230,7 @@ func UploadDirFiles(url string, fields map[string]string, files []DirFile) (*htt
 	for _, df := range files {
 		// path[] field for the relative path
 		mw.WriteField("path[]", df.RelPath)
+		mw.WriteField("local_path[]", df.LocalPath)
 
 		// file part
 		h := make(textproto.MIMEHeader)
@@ -270,6 +271,7 @@ func SyncDirFiles(url string, fields map[string]string, files []DirFile) (*http.
 
 	for _, df := range files {
 		mw.WriteField("path[]", df.RelPath)
+		mw.WriteField("local_path[]", df.LocalPath)
 
 		h := make(textproto.MIMEHeader)
 		h.Set("Content-Disposition",
