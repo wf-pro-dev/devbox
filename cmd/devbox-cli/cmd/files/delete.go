@@ -6,18 +6,20 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 func DeleteCmd() *cobra.Command {
 	var force bool
 
 	c := &cobra.Command{
-		Use:     "delete <id|path>",
-		Aliases: []string{"rm"},
-		Short:   "Delete a file",
-		Args:    cobra.ExactArgs(1),
-		Example: `  devbox-cli files delete deploy.sh
-  devbox-cli files delete abcd1234 --force`,
+		Use:               "rm <id|path>",
+		Aliases:           []string{"delete"},
+		Short:             "Delete a file",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
+		Example: `  devbox-cli files rm deploy.sh
+  devbox-cli files rm abcd1234 --force`,
 		RunE: func(c *cobra.Command, args []string) error {
 			f, err := getFileMeta(args[0])
 			if err != nil {

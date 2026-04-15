@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/db"
 )
 
@@ -16,6 +17,12 @@ func CpCmd() *cobra.Command {
 		Use:   "cp <id|path> <new-path>",
 		Short: "Copy a file to a new path (shares blob, no disk copy)",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files cp deploy.sh deploy-backup.sh
   devbox-cli files cp abcd1234 nginx/deploy.sh --collection nginx`,
 		RunE: func(c *cobra.Command, args []string) error {

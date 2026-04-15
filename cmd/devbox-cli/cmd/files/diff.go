@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/version"
 	"github.com/wf-pro-dev/devbox/types"
 )
@@ -17,6 +18,12 @@ func DiffCmd() *cobra.Command {
 		Use:   "diff <id|path> [vN] [vM | <local-file>]",
 		Short: "Compare versions, local files, or remote node files vs vault",
 		Args:  cobra.RangeArgs(1, 3),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files diff deploy.sh              # Vault: current vs previous
   devbox-cli files diff deploy.sh v2 v1        # Vault: v2 vs v1
   devbox-cli files diff deploy.sh ./deploy.sh  # Vault vs Local
@@ -51,7 +58,8 @@ func DiffCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("node", "", "Target node for remote drift comparison")
+	cmd.Flags().StringP("node", "n", "", "Target node for remote drift comparison")
+	_ = cmd.RegisterFlagCompletionFunc("node", completion.PeerCompletions)
 	return cmd
 }
 

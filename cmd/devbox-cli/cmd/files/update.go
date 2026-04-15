@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -16,6 +17,12 @@ func UpdateCmd() *cobra.Command {
 		Use:   "update <id|path> <local-file>",
 		Short: "Update file content (creates a new version)",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files update deploy.sh ./deploy.sh
   devbox-cli files update abcd1234 ./new-deploy.sh -m "fix: correct db host"`,
 		RunE: func(c *cobra.Command, args []string) error {

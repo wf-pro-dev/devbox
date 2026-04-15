@@ -13,6 +13,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/types"
 )
@@ -22,9 +23,10 @@ func PullCmd() *cobra.Command {
 	var version int
 
 	c := &cobra.Command{
-		Use:   "pull <id|path>",
-		Short: "Download a file",
-		Args:  cobra.ExactArgs(1),
+		Use:               "pull <id|path>",
+		Short:             "Download a file",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
 		Example: `  devbox-cli files pull deploy.sh
   devbox-cli files pull abcd1234
   devbox-cli files pull nginx/conf.d/default.conf --out /tmp/

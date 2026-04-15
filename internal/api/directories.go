@@ -42,6 +42,9 @@ func (h *dirsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	params := db.ListFilesParams{}
+	if prefix := r.URL.Query().Get("prefix"); prefix != "" {
+		params.Prefix = &prefix
+	}
 	if tag := r.URL.Query().Get("tag"); tag != "" {
 		params.Tag = &tag
 	}

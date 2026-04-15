@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 func TagCmd() *cobra.Command {
@@ -40,6 +41,12 @@ func UntagCmd() *cobra.Command {
 		Use:   "untag <id|path> <tag>",
 		Short: "Remove a tag from a file",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files untag deploy.sh prod
   devbox-cli files untag abcd1234 nginx`,
 		RunE: func(c *cobra.Command, args []string) error {

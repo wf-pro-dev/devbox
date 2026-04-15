@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/types"
 )
@@ -16,14 +17,19 @@ func LsCmd() *cobra.Command {
 	var tag string
 
 	c := &cobra.Command{
-		Use:   "ls",
-		Short: "List collections",
+		Use:               "ls",
+		Short:             "List collections",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completion.DirCompletions,
 		Example: `  devbox-cli dirs ls
   devbox-cli dirs ls --tag nginx`,
 		RunE: func(c *cobra.Command, args []string) error {
 			u := internal.Server() + "/dirs"
 			if tag != "" {
 				u += "?tag=" + url.QueryEscape(tag)
+			}
+			if len(args) > 0 {
+				u += "?prefix=" + url.QueryEscape(args[0])
 			}
 			resp, err := internal.GetJSON(u)
 			if err != nil {
@@ -56,6 +62,6 @@ func LsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&tag, "tag", "", "Filter by tag")
+	c.Flags().StringVarP(&tag, "tag", "t", "", "Filter by tag")
 	return c
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/version"
 	"github.com/wf-pro-dev/devbox/types"
 )
@@ -18,6 +19,12 @@ func RollbackCmd() *cobra.Command {
 		Use:   "rollback <id|path> <version>",
 		Short: "Restore a file to a previous version",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files rollback deploy.sh 2
   devbox-cli files rollback deploy.sh v2 --force`,
 		RunE: func(c *cobra.Command, args []string) error {

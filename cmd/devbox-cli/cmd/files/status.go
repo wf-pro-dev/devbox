@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 // StatusResult matches the JSON structure returned by DriftHandler.GetFileStatus
@@ -27,7 +28,8 @@ func StatusCmd() *cobra.Command {
 		Short: "Check file drift across the Tailscale fleet",
 		Long: `Compares the vault version of a file against physical files on remote nodes.
 It only checks nodes where the directory is explicitly marked as 'share = true' in files.toml.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
 		Example: `  devbox-cli files status nginx.conf
   devbox-cli files status 550e8400-e29b-41d4-a716 --nodes vps-1,vps-2`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -83,7 +85,8 @@ It only checks nodes where the directory is explicitly marked as 'share = true' 
 	}
 
 	// Flag for manual node filtering
-	cmd.Flags().StringSliceVar(&nodes, "nodes", nil, "Comma-separated list of hostnames to check")
+	cmd.Flags().StringSliceVarP(&nodes, "nodes", "n", nil, "Comma-separated list of hostnames to check")
+	_ = cmd.RegisterFlagCompletionFunc("nodes", completion.PeerCompletions)
 
 	return cmd
 }

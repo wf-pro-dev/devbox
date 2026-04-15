@@ -6,15 +6,17 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/internal/db"
 )
 
 func LogCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "log <id|path>",
-		Aliases: []string{"history", "versions"},
-		Short:   "Show version history",
-		Args:    cobra.ExactArgs(1),
+		Use:               "log <id|path>",
+		Aliases:           []string{"history", "versions"},
+		Short:             "Show version history",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
 		Example: `  devbox-cli files log deploy.sh
   devbox-cli files log abcd1234`,
 		RunE: func(c *cobra.Command, args []string) error {

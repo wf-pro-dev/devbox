@@ -6,19 +6,23 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/types"
 )
+
+const editExample = `  devbox-cli files edit deploy.sh --desc "Production deploy script"
+  devbox-cli files edit abcd1234 --lang bash
+  devbox-cli files edit old/path.sh --path new/path.sh`
 
 func EditCmd() *cobra.Command {
 	var desc, lang, path string
 
 	c := &cobra.Command{
-		Use:   "edit <id|path>",
-		Short: "Edit file metadata (description, language, path)",
-		Args:  cobra.ExactArgs(1),
-		Example: `  devbox-cli files edit deploy.sh --desc "Production deploy script"
-  devbox-cli files edit abcd1234 --lang bash
-  devbox-cli files edit old/path.sh --path new/path.sh`,
+		Use:               "edit <id|path>",
+		Short:             "Edit file metadata (description, language, path)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
+		Example:           editExample,
 
 		RunE: func(c *cobra.Command, args []string) error {
 

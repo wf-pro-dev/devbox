@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
@@ -15,9 +16,10 @@ func SendCmd() *cobra.Command {
 	var all bool
 
 	c := &cobra.Command{
-		Use:   "send <id|filename>",
-		Short: "Deliver a file to one or more peers via Tailscale",
-		Args:  cobra.ExactArgs(1),
+		Use:               "send <id|filename>",
+		Short:             "Deliver a file to one or more peers via Tailscale",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.FileCompletions,
 		Example: `  devbox-cli files send deploy.sh --to myhost
   devbox-cli files send deploy.sh --to host1,host2 --dest /opt/scripts
   devbox-cli files send deploy.sh --all`,
@@ -58,9 +60,11 @@ func SendCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&to, "to", "", "Comma-separated target hostnames")
-	c.Flags().StringVar(&dest, "dest", "", "Destination directory on target")
-	c.Flags().BoolVar(&all, "all", false, "Deliver to all online peers")
+	c.Flags().StringVarP(&to, "to", "t", "", "Comma-separated target hostnames")
+	_ = c.RegisterFlagCompletionFunc("to", completion.PeerCompletions)
+
+	c.Flags().StringVarP(&dest, "dest", "d", "", "Destination directory on target")
+	c.Flags().BoolVarP(&all, "all", "a", false, "Deliver to all online peers")
 	return c
 }
 

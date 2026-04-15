@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/devbox/types"
+	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
 func newPeersCmd() *cobra.Command {
@@ -18,12 +18,12 @@ func newPeersCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var peers []types.Peer
+			var peers []tailkitTypes.Peer
 			if err := internal.Decode(resp, &peers); err != nil {
 				return err
 			}
 			for _, peer := range peers {
-				fmt.Printf("%s\t%s\t%s\t%t\n", peer.Hostname, peer.DNSName, peer.IP, peer.Online)
+				fmt.Printf("%s\t%s\t%s\t%t\n", peer.Status.HostName, peer.Status.DNSName, peer.Status.TailscaleIPs[0], peer.Status.Online)
 			}
 			return nil
 		},
