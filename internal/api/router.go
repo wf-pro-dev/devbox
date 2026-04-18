@@ -56,51 +56,53 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 		srv:      srv,
 	}
 
-	mux := http.NewServeMux()
+	root := http.NewServeMux()
+	protected := http.NewServeMux()
 
 	// ── Health ───────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /health", handleHealth)
+	// Docker and local probes need a public readiness endpoint, so keep health
+	// outside the tailnet auth middleware.
+	root.HandleFunc("GET /health", handleHealth)
 
 	// ── Files ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /files", fh.handleList)
-	mux.HandleFunc("POST /files", fh.handleUpload)
-	mux.HandleFunc("GET /files/{id}", fh.handleGet)
-	mux.HandleFunc("PUT /files/{id}", fh.handleUpdate)
-	mux.HandleFunc("PATCH /files/{id}", fh.handleEditMeta)
-	mux.HandleFunc("DELETE /files/{id}", fh.handleDelete)
-	mux.HandleFunc("POST /files/{id}/tags", fh.handleAddTags)
-	mux.HandleFunc("DELETE /files/{id}/tags/{tag}", fh.handleRemoveTag)
-	mux.HandleFunc("POST /files/{id}/copy", fh.handleCopy)
-	mux.HandleFunc("POST /files/{id}/move", fh.handleMove)
-	mux.HandleFunc("GET /files/{id}/versions", fh.handleListVersions)
-	mux.HandleFunc("GET /files/{id}/versions/{n}", fh.handleGetVersion)
-	mux.HandleFunc("POST /files/{id}/versions/{n}/rollback", fh.handleRollback)
-	mux.HandleFunc("GET /files/{id}/diff", fh.handleDiff)
-	mux.HandleFunc("POST /files/{id}/send", sh.handleSendFile)
-	mux.HandleFunc("GET /files/{id}/status", drh.handleGetFileStatus)
-	mux.HandleFunc("GET /files/{id}/diff/node", drh.handleDiffNode)
-	mux.HandleFunc("POST /files/{id}/diff/local", drh.handleDiffLocal)
+	protected.HandleFunc("GET /files", fh.handleList)
+	protected.HandleFunc("POST /files", fh.handleUpload)
+	protected.HandleFunc("GET /files/{id}", fh.handleGet)
+	protected.HandleFunc("PUT /files/{id}", fh.handleUpdate)
+	protected.HandleFunc("PATCH /files/{id}", fh.handleEditMeta)
+	protected.HandleFunc("DELETE /files/{id}", fh.handleDelete)
+	protected.HandleFunc("POST /files/{id}/tags", fh.handleAddTags)
+	protected.HandleFunc("DELETE /files/{id}/tags/{tag}", fh.handleRemoveTag)
+	protected.HandleFunc("POST /files/{id}/copy", fh.handleCopy)
+	protected.HandleFunc("POST /files/{id}/move", fh.handleMove)
+	protected.HandleFunc("GET /files/{id}/versions", fh.handleListVersions)
+	protected.HandleFunc("GET /files/{id}/versions/{n}", fh.handleGetVersion)
+	protected.HandleFunc("POST /files/{id}/versions/{n}/rollback", fh.handleRollback)
+	protected.HandleFunc("GET /files/{id}/diff", fh.handleDiff)
+	protected.HandleFunc("POST /files/{id}/send", sh.handleSendFile)
+	protected.HandleFunc("GET /files/{id}/status", drh.handleGetFileStatus)
+	protected.HandleFunc("GET /files/{id}/diff/node", drh.handleDiffNode)
+	protected.HandleFunc("POST /files/{id}/diff/local", drh.handleDiffLocal)
 
 	// ── Dirs ─────────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /dirs", dh.handleList)
-	mux.HandleFunc("POST /dirs", dh.handleCreate)
-	mux.HandleFunc("GET /dirs/{dir}", dh.handleGet)
-	mux.HandleFunc("PUT /dirs/{dir}", dh.handleSync)
-	mux.HandleFunc("DELETE /dirs/{dir}", dh.handleDelete)
-	mux.HandleFunc("POST /dirs/{dir}/tags", dh.handleAddTags)
-	mux.HandleFunc("DELETE /dirs/{dir}/tags/{tag}", dh.handleRemoveTag)
-	mux.HandleFunc("POST /dirs/{dir}/diff", dh.handleDiff)
-	mux.HandleFunc("POST /dirs/{dir}/send", sh.handleSendDir)
+	protected.HandleFunc("GET /dirs", dh.handleList)
+	protected.HandleFunc("POST /dirs", dh.handleCreate)
+	protected.HandleFunc("GET /dirs/{dir}", dh.handleGet)
+	protected.HandleFunc("PUT /dirs/{dir}", dh.handleSync)
+	protected.HandleFunc("DELETE /dirs/{dir}", dh.handleDelete)
+	protected.HandleFunc("POST /dirs/{dir}/tags", dh.handleAddTags)
+	protected.HandleFunc("DELETE /dirs/{dir}/tags/{tag}", dh.handleRemoveTag)
+	protected.HandleFunc("POST /dirs/{dir}/diff", dh.handleDiff)
+	protected.HandleFunc("POST /dirs/{dir}/send", sh.handleSendDir)
 
 	// ── Search ───────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /search", sch.handleSearch)
+	protected.HandleFunc("GET /search", sch.handleSearch)
 
 	// ── Peers ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /peers", sh.handleListPeers)
+	protected.HandleFunc("GET /peers", sh.handleListPeers)
 
-	var h http.Handler = mux
-	h = auth.Middleware(srv)(h)
-	return h
+	root.Handle("/", auth.Middleware(srv)(protected))
+	return root
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

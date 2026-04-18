@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -230,7 +231,12 @@ func UploadDirFiles(url string, fields map[string]string, files []DirFile) (*htt
 	for _, df := range files {
 		// path[] field for the relative path
 		mw.WriteField("path[]", df.RelPath)
-		mw.WriteField("local_path[]", df.LocalPath)
+		absolutePath, err := filepath.Abs(df.LocalPath)
+		if err != nil {
+			log.Printf("error getting absolute path for %s: %v", df.LocalPath, err)
+			continue
+		}
+		mw.WriteField("local_path[]", absolutePath)
 
 		// file part
 		h := make(textproto.MIMEHeader)
