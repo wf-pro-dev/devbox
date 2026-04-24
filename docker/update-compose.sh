@@ -1,23 +1,54 @@
-ARG_SERVICE=$1
-ARG_TAG=$2
+#!/usr/bin/bash
+set -e
 
-SERVICE=${ARG_SERVICE:-:-api}
-TAG=${ARG_TAG:-${DEVBOX_BACKEND_VERSION:-latest}}
+usage() {
+	echo "Usage: $0 -p <project> -s <service> -t <tag>"
+	echo "Example: $0 -p devbox -s api -t latest"
+	echo ""
+	echo "  -p <project>   Project name (folder name in $HOME)"
+	echo "  -s <service>   Service to update (matches compose service name)"
+	echo "  -t <tag>       Tag to use for the image"
+	echo "  -h             Show this help message"
+	exit 1
+}
 
-PROJECT_DIR="$HOME/devbox"
+while getopts "p:s:t:h" opt; do
+	case $opt in
+		p) ARG_PROJECT=$OPTARG ;;
+		s) ARG_SERVICE=$OPTARG ;;
+		t) ARG_TAG=$OPTARG ;;
+		h) usage ;;
+		*) usage ;;
+	esac
+done
+
+# Validation
+if [ -z "$ARG_PROJECT" ] || [ -z "$ARG_SERVICE" ]; then
+	echo "ERROR: Project (-p) and Service (-s) are required."
+	usage
+fi
+
+PROJECT=$ARG_PROJECT
+SERVICE=$ARG_SERVICE
+TAG=${ARG_TAG:-latest}
+
+PROJECT_DIR="$HOME/$PROJECT"
 DOCKER_DIR="$PROJECT_DIR/docker"
+LOCAL_IMAGE="$PROJECT-$SERVICE:latest"
+TAG_IMAGE="wwwill-1.lab:5000/$PROJECT/$SERVICE:$TAG"
 BUILD="Dockerfile.$SERVICE"
-IMAGE="devbox-$SERVICE:latest"
-TAG_IMAGE="wwwill-1.lab:5000/devbox/$SERVICE:$TAG"
 
-# build the new image
-docker build -f "$DOCKER_DIR/$BUILD" -t $IMAGE ../
+# Build the new image
+docker build -f "$DOCKER_DIR/build/$BUILD" -t "$LOCAL_IMAGE" "$PROJECT_DIR"
 
-# Save the new IMAGE
-docker tag $IMAGE $TAG_IMAGE
+# Tag and Push to registry
+docker tag "$LOCAL_IMAGE" "$TAG_IMAGE"
+docker push "$TAG_IMAGE"
 
-# Push the new image to repository
-docker push $TAG_IMAGE
+# Start/Update container via Compose
+# Note: This assumes your compose file is in the PROJECT_DIR
+cd "$PROJECT_DIR"
+docker compose -f "$DOCKER_DIR/docker-compose.yaml" up -d "$PROJECT-$SERVICE"
 
-# Start new container
-docker compose up -d $SERVICE
+# Clean up local build image
+docker rmi "$LOCAL_IMAGE"

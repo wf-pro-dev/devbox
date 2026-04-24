@@ -1,8 +1,9 @@
-services:
+name: devbox
 
+services:
   # ── Go backend — API + Tailscale ────────────────────────────────────────
   backend:
-    image: wwwill-1.lab:5000/devbox/backend:${DEVBOX_BACKEND_VERSION:-latest}
+    image: wwwill-1.lab:5000/devbox/backend:${DEVBOX_BACKEND_VERSION:-dev}
     container_name: devbox-backend
     restart: unless-stopped
     ports:
@@ -32,13 +33,16 @@ services:
 
   # ── Svelte frontend — Nginx ──────────────────────────────────────────────
   ui:
-    image: wwwill-1.lab:5000/devbox/ui:${DEVBOX_UI_VERSION:-latest}
+    image: wwwill-1.lab:5000/devbox/ui:${DEVBOX_UI_VERSION:-dev}
     container_name: devbox-ui
     restart: unless-stopped
     networks:
       - devbox-net
     ports:
-      - "80:80"
+      - target: 80
+        published: "${DEVBOX_UI_PORT:-80}"
+        host_ip: "${DEVBOX_UI_BIND_IP:-127.0.0.1}"
+        protocol: tcp
     environment:
       - BACKEND_URL=http://backend:8888
     depends_on:
