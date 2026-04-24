@@ -46,9 +46,8 @@ docker tag "$LOCAL_IMAGE" "$TAG_IMAGE"
 docker push "$TAG_IMAGE"
 
 # Start/Update container via Compose
-# Note: This assumes your compose file is in the PROJECT_DIR
-cd "$PROJECT_DIR"
-docker compose -f "$DOCKER_DIR/docker-compose.yaml" up -d "$PROJECT-$SERVICE"
+cd "$DOCKER_DIR"
+docker compose up -d "$SERVICE"
 
 # Clean up local build image
 docker rmi "$LOCAL_IMAGE"
