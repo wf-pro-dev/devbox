@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -232,8 +231,6 @@ func UploadDirFiles(url string, fields map[string]string, files []DirFile) (*htt
 		// path[] field for the relative path
 		mw.WriteField("path[]", df.RelPath)
 		mw.WriteField("local_path[]", df.LocalPath)
-
-		log.Println("localPath", df.LocalPath)
 		// file part
 		h := make(textproto.MIMEHeader)
 		h.Set("Content-Disposition",
@@ -364,8 +361,6 @@ func WalkDir(root string) ([]DirFile, error) {
 		if err != nil {
 			return err
 		}
-
-		log.Println("absolutePath", absolutePath)
 
 		files = append(files, DirFile{
 			LocalPath: absolutePath,
