@@ -2,7 +2,7 @@
 # install.sh — installs devbox-cli from GitHub Releases
 #
 # Usage:
-#   curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sudo sh
 
 set -e
 
@@ -98,6 +98,9 @@ fi
 
 # ── Shell completions ─────────────────────────────────────────────────────────
 
+# Global variable to store the user's RC file path for the final output message
+COMPLETION_RC_FILE=""
+
 setup_completions() {
   local bin="${INSTALL_DIR}/${BINARY_NAME}"
 
@@ -107,33 +110,52 @@ setup_completions() {
     return 0
   fi
 
+  # Bypass sudo context: Identify the actual user and their home directory
+  local actual_user="${SUDO_USER:-$USER}"
+  local actual_home
+  actual_home=$(eval echo "~${actual_user}")
+
+  if [ -z "$actual_home" ] || [ "$actual_home" = "/root" ]; then
+    info "Warning: Could not determine non-root user home directory — skipping completion setup."
+    return 0
+  fi
+
+  # Unique setup per OS: Linux -> Bash, Darwin -> Zsh
   case "$OS" in
     linux)
-      local bash_rc="$HOME/.bashrc"
-      if [ -f "$bash_rc" ]; then
-        if ! grep -qF "source <(${bin} completion bash)" "$bash_rc"; then
-          info "Setting up bash completion..."
-          printf '\n# Added by devbox-cli installer\nsource <(%s completion bash)\n' "$bin" >> "$bash_rc"
-          info "Bash completion configured in ${bash_rc}."
-        else
-          info "Bash completion already configured in ${bash_rc}."
-        fi
+      local comp_dir=""
+      if [ -d /etc/bash_completion.d ]; then
+        comp_dir="/etc/bash_completion.d"
+      elif [ -d /usr/local/etc/bash_completion.d ]; then
+        comp_dir="/usr/local/etc/bash_completion.d"
+      fi
+
+      if [ -n "$comp_dir" ]; then
+        info "Generating bash completion file in ${comp_dir}..."
+        "$bin" completion bash | sudo tee "${comp_dir}/${BINARY_NAME}" >/dev/null
+        # Set the target RC file for the user output message
+        COMPLETION_RC_FILE="${actual_home}/.bashrc"
       else
-        info "Warning: ${bash_rc} not found — skipping bash completion setup."
+        info "No supported bash completion directory found — skipping."
       fi
       ;;
     darwin)
-      local zsh_rc="$HOME/.zshrc"
-      if [ -f "$zsh_rc" ]; then
-        if ! grep -qF "source <(${bin} completion zsh)" "$zsh_rc"; then
-          info "Setting up zsh completion..."
-          printf '\n# Added by devbox-cli installer\nsource <(%s completion zsh)\n' "$bin" >> "$zsh_rc"
-          info "Zsh completion configured in ${zsh_rc}."
-        else
-          info "Zsh completion already configured in ${zsh_rc}."
+      local zsh_dir=""
+      for candidate in /usr/local/share/zsh/site-functions /usr/share/zsh/vendor-completions; do
+        if [ -d "$candidate" ]; then
+          zsh_dir="$candidate"
+          break
         fi
+      done
+
+      if [ -n "$zsh_dir" ]; then
+        info "Generating zsh completion file in ${zsh_dir}..."
+        "$bin" completion zsh | sudo tee "${zsh_dir}/_${BINARY_NAME}" >/dev/null
+        sudo chmod 644 "${zsh_dir}/_${BINARY_NAME}"
+        # Set the target RC file for the user output message
+        COMPLETION_RC_FILE="${actual_home}/.zshrc"
       else
-        info "Warning: ${zsh_rc} not found — skipping zsh completion setup."
+        info "No supported zsh completion directory found — skipping."
       fi
       ;;
   esac
@@ -145,8 +167,10 @@ setup_completions
 
 echo ""
 echo "  devbox-cli ${VERSION} installed successfully."
-echo ""
-echo "  Next step — register devbox-cli in tailkitd:"
-echo ""
-echo "    devbox-cli setup"
-echo ""
+
+if [ -n "$COMPLETION_RC_FILE" ]; then
+  echo ""
+  echo "  To activate shell completions in your current terminal, execute:"
+  echo ""
+  echo "    source $COMPLETION_RC_FILE"
+fi
