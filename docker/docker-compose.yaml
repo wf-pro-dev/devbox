@@ -9,7 +9,7 @@ services:
     ports:
       - "8888:8888"
     networks:
-      - devbox-net
+      - network
     environment:
       TS_AUTHKEY:          ${TS_AUTHKEY}
       DEVBOX_HOSTNAME:     ${DEVBOX_HOSTNAME:-devbox}
@@ -18,7 +18,7 @@ services:
       DEVBOX_LOCAL_ADDR:   0.0.0.0:8888
       DEVBOX_MAX_VERSIONS: ${DEVBOX_MAX_VERSIONS:-10}
     volumes:
-      - devbox-data:/data
+      - data:/data
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -37,7 +37,7 @@ services:
     container_name: devbox-ui
     restart: unless-stopped
     networks:
-      - devbox-net
+      - network
     ports:
       - target: 80
         published: "${DEVBOX_UI_PORT:-80}"
@@ -49,9 +49,9 @@ services:
       - backend
 
 networks:
-  devbox-net:
+  network:
     driver: bridge
 
 volumes:
-  devbox-data:
+  data:
     driver: local

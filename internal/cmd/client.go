@@ -231,13 +231,9 @@ func UploadDirFiles(url string, fields map[string]string, files []DirFile) (*htt
 	for _, df := range files {
 		// path[] field for the relative path
 		mw.WriteField("path[]", df.RelPath)
-		absolutePath, err := filepath.Abs(df.LocalPath)
-		if err != nil {
-			log.Printf("error getting absolute path for %s: %v", df.LocalPath, err)
-			continue
-		}
-		mw.WriteField("local_path[]", absolutePath)
+		mw.WriteField("local_path[]", df.LocalPath)
 
+		log.Println("localPath", df.LocalPath)
 		// file part
 		h := make(textproto.MIMEHeader)
 		h.Set("Content-Disposition",
@@ -363,8 +359,16 @@ func WalkDir(root string) ([]DirFile, error) {
 		if err != nil {
 			return err
 		}
+
+		absolutePath, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+
+		log.Println("absolutePath", absolutePath)
+
 		files = append(files, DirFile{
-			LocalPath: path,
+			LocalPath: absolutePath,
 			RelPath:   filepath.ToSlash(rel),
 		})
 		return nil
