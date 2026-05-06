@@ -107,40 +107,36 @@ setup_completions() {
     return 0
   fi
 
-  local completion_set=""
-
-  # ── Bash ──────────────────────────────────────────────────────────────────
-  if [ -d /etc/bash_completion.d ]; then
-    info "Setting up bash completion..."
-    "$bin" completion bash | sudo tee /etc/bash_completion.d/"${BINARY_NAME}" >/dev/null
-    completion_set="bash"
-  elif [ -d /usr/local/etc/bash_completion.d ]; then
-    info "Setting up bash completion..."
-    "$bin" completion bash | sudo tee /usr/local/etc/bash_completion.d/"${BINARY_NAME}" >/dev/null
-    completion_set="bash"
-  fi
-
-  # ── Zsh ───────────────────────────────────────────────────────────────────
-  local zsh_dir=""
-  for candidate in /usr/local/share/zsh/site-functions /usr/share/zsh/vendor-completions; do
-    if [ -d "$candidate" ]; then
-      zsh_dir="$candidate"
-      break
-    fi
-  done
-
-  if [ -d "$zsh_dir" ]; then
-    info "Setting up zsh completion..."
-    "$bin" completion zsh | sudo tee "${zsh_dir}/_${BINARY_NAME}" >/dev/null
-    sudo chmod 644 "${zsh_dir}/_${BINARY_NAME}"
-    completion_set="${completion_set:+$completion_set, }zsh"
-  fi
-
-  if [ -n "$completion_set" ]; then
-    info "Shell completions installed for: ${completion_set}"
-  else
-    info "No supported shell completion directories found — skipping."
-  fi
+  case "$OS" in
+    linux)
+      local bash_rc="$HOME/.bashrc"
+      if [ -f "$bash_rc" ]; then
+        if ! grep -qF "source <(${bin} completion bash)" "$bash_rc"; then
+          info "Setting up bash completion..."
+          printf '\n# Added by devbox-cli installer\nsource <(%s completion bash)\n' "$bin" >> "$bash_rc"
+          info "Bash completion configured in ${bash_rc}."
+        else
+          info "Bash completion already configured in ${bash_rc}."
+        fi
+      else
+        info "Warning: ${bash_rc} not found — skipping bash completion setup."
+      fi
+      ;;
+    darwin)
+      local zsh_rc="$HOME/.zshrc"
+      if [ -f "$zsh_rc" ]; then
+        if ! grep -qF "source <(${bin} completion zsh)" "$zsh_rc"; then
+          info "Setting up zsh completion..."
+          printf '\n# Added by devbox-cli installer\nsource <(%s completion zsh)\n' "$bin" >> "$zsh_rc"
+          info "Zsh completion configured in ${zsh_rc}."
+        else
+          info "Zsh completion already configured in ${zsh_rc}."
+        fi
+      else
+        info "Warning: ${zsh_rc} not found — skipping zsh completion setup."
+      fi
+      ;;
+  esac
 }
 
 setup_completions
@@ -149,4 +145,8 @@ setup_completions
 
 echo ""
 echo "  devbox-cli ${VERSION} installed successfully."
+echo ""
+echo "  Next step — register devbox-cli in tailkitd:"
+echo ""
+echo "    devbox-cli setup"
 echo ""
