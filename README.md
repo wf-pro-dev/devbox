@@ -48,7 +48,7 @@ A `devbox-cli` binary gives you full access from the terminal on any machine.
 Install the CLI on any machine with one command (supports Linux and macOS on `amd64` and `arm64`):
 
 ```bash
-curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/wf-pro-dev/devbox/releases/latest/download/install.sh | sudo sh
 ````
 
 ### 2\. Server (Backend + UI)

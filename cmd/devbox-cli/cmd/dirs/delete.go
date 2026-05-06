@@ -6,16 +6,18 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 func DeleteCmd() *cobra.Command {
 	var force bool
 
 	c := &cobra.Command{
-		Use:     "delete <name|id>",
-		Aliases: []string{"rm"},
-		Short:   "Delete a collection and all its files",
-		Args:    cobra.ExactArgs(1),
+		Use:               "delete <name|id>",
+		Aliases:           []string{"rm"},
+		Short:             "Delete a collection and all its files",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.DirCompletions,
 		Example: `  devbox-cli dirs delete nginx
   devbox-cli dirs delete nginx --force`,
 		RunE: func(c *cobra.Command, args []string) error {
