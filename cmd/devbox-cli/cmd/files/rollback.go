@@ -20,8 +20,11 @@ func RollbackCmd() *cobra.Command {
 		Short: "Restore a file to a previous version",
 		Args:  cobra.ExactArgs(2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			if len(args) >= 1 {
+			if len(args) >= 2 {
 				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			if len(args) == 1 {
+				return completion.VersionCompletions(cmd, args, toComplete)
 			}
 			return completion.FileCompletions(cmd, args, toComplete)
 		},

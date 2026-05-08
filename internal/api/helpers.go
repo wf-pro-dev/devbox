@@ -7,7 +7,6 @@ import (
 
 	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/internal/models"
-	"github.com/wf-pro-dev/devbox/types"
 )
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -31,16 +30,6 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 
 func jsonNoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// ── Response types ────────────────────────────────────────────────────────────
-
-// dirResponse describes a virtual directory derived from a path prefix.
-type dirResponse struct {
-	Prefix    string       `json:"prefix"`
-	FileCount int          `json:"file_count"`
-	Tags      []string     `json:"tags"`
-	Files     []types.File `json:"files,omitempty"`
 }
 
 // ── Tag helpers ───────────────────────────────────────────────────────────────

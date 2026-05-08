@@ -44,12 +44,12 @@ func PushCmd() *cobra.Command {
 				return err
 			}
 
-			var result types.Directory[types.File]
+			var result types.DirListing
 			if err := internal.Decode(resp, &result); err != nil {
 				return err
 			}
 			fmt.Printf("created    %s\n", result.Prefix)
-			fmt.Printf("files      %d\n", result.FileCount)
+			fmt.Printf("files      %d\n", len(result.Entries))
 			if len(result.Tags) > 0 {
 				fmt.Printf("tags       %s\n", internal.FmtTags(result.Tags))
 			}

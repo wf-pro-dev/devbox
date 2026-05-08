@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
-	"github.com/wf-pro-dev/devbox/internal/db"
+	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -19,9 +19,10 @@ func PullCmd() *cobra.Command {
 	var out string
 
 	c := &cobra.Command{
-		Use:   "pull <name|id>",
-		Short: "Download a collection, recreating the directory structure locally",
-		Args:  cobra.ExactArgs(1),
+		Use:               "pull <name>",
+		Short:             "Download a collection, recreating the directory structure locally",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.DirCompletions,
 		Example: `  devbox-cli dirs pull nginx
   devbox-cli dirs pull nginx --out /tmp/nginx-backup`,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -36,10 +37,14 @@ func PullCmd() *cobra.Command {
 				destRoot = dir.Prefix
 			}
 
-			fmt.Printf("pulling %d files -> %s/\n", dir.FileCount, destRoot)
+			fmt.Printf("pulling %d files -> %s/\n", len(dir.Entries), destRoot)
 			ok, fail := 0, 0
 
-			for _, f := range dir.Files {
+			for _, e := range dir.Entries {
+				f := e.File
+				if f == nil {
+					continue
+				}
 				// Strip the collection prefix to get the relative path
 				rel := strings.TrimPrefix(f.Path, dir.Prefix)
 				destPath := filepath.Join(destRoot, filepath.FromSlash(rel))
@@ -89,13 +94,13 @@ func PullCmd() *cobra.Command {
 }
 
 // getCollection fetches collection metadata and its file list.
-func getDirectory(nameOrID string) (*types.Directory[db.File], error) {
+func getDirectory(nameOrID string) (*types.DirListing, error) {
 	u := internal.Server() + "/dirs/" + url.PathEscape(nameOrID)
 	resp, err := internal.GetJSON(u)
 	if err != nil {
 		return nil, err
 	}
-	var result types.Directory[db.File]
+	var result types.DirListing
 	if err := internal.Decode(resp, &result); err != nil {
 		return nil, err
 	}

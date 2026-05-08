@@ -12,10 +12,20 @@ import (
 
 func MvCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:               "mv <id|path> <new-path>",
-		Short:             "Rename or move a file to a new path",
-		Args:              cobra.ExactArgs(2),
-		ValidArgsFunction: completion.FileCompletions,
+		Use:   "mv <id|path> <new-path>",
+		Short: "Rename or move a file to a new path",
+		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+
+			if len(args) >= 2 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+
+			if len(args) == 1 {
+				return completion.DirCompletions(cmd, args, toComplete)
+			}
+			return completion.FileCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli files mv deploy.sh scripts/deploy.sh
   devbox-cli files mv abcd1234 nginx/deploy.sh`,
 		RunE: func(c *cobra.Command, args []string) error {

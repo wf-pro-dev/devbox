@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
 	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
-	"github.com/wf-pro-dev/devbox/internal/db"
 	"github.com/wf-pro-dev/devbox/types"
 )
 
@@ -35,7 +34,7 @@ func LsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var dirs []types.Directory[db.File]
+			var dirs []types.DirListing
 			if err := internal.Decode(resp, &dirs); err != nil {
 				return err
 			}
@@ -49,7 +48,7 @@ func LsCmd() *cobra.Command {
 			for _, d := range dirs {
 				fmt.Fprintf(w, "%s\t%d\t%s\n",
 					d.Prefix,
-					d.FileCount,
+					len(d.Entries),
 					internal.FmtTags(d.Tags),
 				)
 			}

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { listPeers, api, sendDirectory } from '../api';
-  import type { File, Directory, Peer, SendResult } from '../types';
+  import type { File, DirEntry, Peer, SendResult } from '../types';
 
   /** Pass either a file OR a dir */
   export let file: File | null = null;
-  export let dir: Directory | null = null;
+  export let dir: DirEntry | null = null;
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -17,9 +17,7 @@
   let selected = new Set<string>();
   let destDir = '';
 
-  $: label = file ? file.file_name : (dir ? dir.prefix : '');
-
-  $: console.log(file, dir);  
+  $: label = file ? file.file_name : (dir ? dir.name : '');
 
   onMount(async () => {
     try {
@@ -53,7 +51,7 @@
         results = res ?? [];
 
       } else if (dir) {
-        resDir = await sendDirectory(dir.prefix, targets, false, destDir);
+        resDir = await sendDirectory(dir.name, targets, false, destDir);
         results = Object.values(resDir).flat();
       }
      

@@ -1,39 +1,35 @@
 <script lang="ts">
-  import type { Directory, File, TreeNode } from "../types";
+  import type { DirEntry, File, TreeNode } from "../types";
   import { formatBytes, deleteDirectory } from "../api";
   import DirFile from "./DirFile.svelte";
   import { toast } from "svelte-sonner";
 
-  export let node: TreeNode;
+  export let node: DirEntry;
   export let expanded: Set<string>;
-  export let dirFiles: Record<string, File[] | undefined>;
-  export let onToggle: (dir: Directory) => void;
+  export let dirEntries: Record<string, DirEntry[] | undefined>;
+  export let onToggle: (dir: DirEntry) => void;
   export let onDelete: (prefix: string) => void;
-  export let onDeliver: (dir: Directory) => void;
+  export let onDeliver: (dir: DirEntry) => void;
   export let onFileSelect: (f: File) => void;
   export let onFileDownload: (f: File, e: MouseEvent) => void;
   export let onFileDelete: (f: File) => void;
   export let depth: number;
+  let prefix = node.prefix ?? "";
 
   // A SubDirNode is an intermediate folder — it may or may not have a real
   // Directory backing it. Use the prefix to track open/close state.
-  $: isOpen = expanded.has(node.prefix) || virtualOpen;
-  $: hasChildren = node.children.length > 0;
-  $: isLeafDir = node.dir != null && !hasChildren;
+  $: isOpen = expanded.has(prefix) || virtualOpen;
+  $: hasChildren = node.file_count && node.file_count > 0;
+  $: isLeafDir = node.is_dir && !hasChildren;
   function directFiles(
-    allFiles: File[] | null | undefined,
+    allFiles: DirEntry[] | null | undefined,
     prefix: string,
-  ): File[] | null {
+  ): DirEntry[] | null {
     if (allFiles == null) return null;
-    return allFiles.filter((f) => {
-      const relative = f.path.startsWith(prefix)
-        ? f.path.slice(prefix.length)
-        : f.file_name;
-      return !relative.includes("/");
-    });
+    return allFiles.filter((e) => e.prefix === prefix);
   }
-  $: files = node.dir
-    ? directFiles(dirFiles[node.dir.prefix], node.dir.prefix)
+  $: files = node.is_dir
+    ? directFiles(dirEntries[prefix], prefix)
     : null;
 
   let virtualOpen = false;
@@ -41,8 +37,8 @@
   const INDENT = 20;
 
   function handleToggle() {
-    if (node.dir) {
-      onToggle(node.dir);
+    if (node.is_dir) {
+      onToggle(node);
     } else {
       virtualOpen = !virtualOpen;
     }
@@ -59,8 +55,8 @@
         onClick: async () => {
           try {
             await deleteDirectory(prefix);
-            if (node.children) {
-              node.children = node.children.filter((child) => child.dir?.prefix !== prefix);
+            if (node.file_count && node.file_count > 0) {
+              node.file_count = node.file_count - 1;
             }
             toast.success(`Deleted directory "${prefix}"`);
           } catch (e: unknown) {
@@ -74,7 +70,7 @@
 
   const handleFileDelete = (file: File) => {
     if (files) {
-      files = files.filter((f) => f.id !== file.id);
+      files = files.filter((e) => e.file?.id !== file.id);
     }
     onFileDelete(file);
   }
@@ -117,27 +113,27 @@
       />
     </svg>
 
-    <span class="subnode-name">{node.segment}</span>
+    <span class="subnode-name">{node.name}</span>
 
-    {#if node.dir}
+    {#if node.is_dir}
       <span class="file-count"
-        >{node.dir.file_count} file{node.dir.file_count !== 1 ? "s" : ""}</span
+        >{node.file_count} file{node.file_count !== 1 ? "s" : ""}</span
       >
-      {#if node.dir.size}
+      {#if node.file?.size}
        
-        <span class="dir-size">{formatBytes(node.dir.size)}</span>
+        <span class="dir-size">{formatBytes(node.file.size)}</span>
       {/if}
     {:else}
       <!-- Virtual intermediate node — no real directory backing -->
       <span class="virtual-badge">folder</span>
     {/if}
 
-    {#if node.dir}
+    {#if node.is_dir}
       <div class="node-actions" on:click|stopPropagation>
         <button
           class="na-btn"
           title="Send directory"
-          on:click={() => onDeliver(node.dir)}
+          on:click={() => onDeliver(node)}
         >
           <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
             <path
@@ -152,7 +148,7 @@
         <button
           class="na-btn danger"
           title="Delete directory"
-          on:click={(e) => handleDirDelete(node.dir.prefix, e)}
+          on:click={(e) => handleDirDelete(node.prefix ?? "", e)}
         >
           <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
             <path
@@ -170,41 +166,31 @@
   <!-- Expanded content -->
   {#if isOpen}
     <!-- Recurse into child nodes -->
-    {#each node.children as child}
-      <svelte:self
-        node={child}
-        {expanded}
-        {dirFiles}
-        {onToggle}
-        onDelete={handleSubDelete}
-        {onDeliver}
-        {onFileSelect}
-        {onFileDownload}
-        {onFileDelete}
-        depth={depth + 1}
-      />
-    {/each}
-
-    <!-- Files for this dir (only when it's a real directory node) -->
-    {#if node.dir}
-      {#if files === null}
-        <div
-          class="file-row loading"
-          style="padding-left: {14 + (depth + 1) * INDENT}px"
-        >
-          Loading files…
-        </div>
-      {:else}
-        {#each files as file}
+    {#if hasChildren}
+      {#each dirEntries[prefix] as entry}
+        {#if entry.is_dir}
+          <svelte:self
+            node={entry}
+            {expanded}
+            {dirEntries}
+            {onToggle}
+            onDelete={handleSubDelete}
+            {onDeliver}
+            {onFileSelect}
+            {onFileDownload}
+            {onFileDelete}
+            depth={depth + 1}
+          />
+        {:else}
           <DirFile
-            {file}
+            file={entry.file!}
             paddingLeft={14 + (depth + 1) * INDENT}
             {onFileSelect}
             onDownload={onFileDownload}
-            on:deleted={() => handleFileDelete(file)}
+            on:deleted={() => handleFileDelete(entry.file!)}
           />
-        {/each}
-      {/if}
+        {/if}
+      {/each}
     {/if}
   {/if}
 </div>

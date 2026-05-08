@@ -6,13 +6,20 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 func TagCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "tag <name|id> <tag>",
+		Use:   "tag <name> <tag>",
 		Short: "Add a tag to a collection",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.DirCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli dirs tag nginx prod
   devbox-cli dirs tag abcd1234 infra`,
 		RunE: func(c *cobra.Command, args []string) error {

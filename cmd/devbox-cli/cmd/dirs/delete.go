@@ -13,8 +13,8 @@ func DeleteCmd() *cobra.Command {
 	var force bool
 
 	c := &cobra.Command{
-		Use:               "delete <name|id>",
-		Aliases:           []string{"rm"},
+		Use:               "rm <name>",
+		Aliases:           []string{"delete"},
 		Short:             "Delete a collection and all its files",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completion.DirCompletions,
@@ -27,7 +27,7 @@ func DeleteCmd() *cobra.Command {
 			}
 
 			if !force {
-				fmt.Printf("delete collection %q (%d files)? [y/N] ", dir.Prefix, dir.FileCount)
+				fmt.Printf("delete collection %q (%d files)? [y/N] ", dir.Prefix, len(dir.Entries))
 				var ans string
 				fmt.Scanln(&ans)
 				if ans != "y" && ans != "Y" {
@@ -44,7 +44,7 @@ func DeleteCmd() *cobra.Command {
 			if err := internal.CheckNoContent(resp); err != nil {
 				return err
 			}
-			fmt.Printf("deleted  %s (%d files)\n", dir.Prefix, dir.FileCount)
+			fmt.Printf("deleted  %s (%d files)\n", dir.Prefix, len(dir.Entries))
 			return nil
 		},
 	}

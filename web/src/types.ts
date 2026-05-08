@@ -98,6 +98,20 @@ export interface Directory {
   files?: File[];
 }
 
+export interface DirEntry {
+  name: string;
+  is_dir: boolean;
+  prefix?: string;
+  file_count?: number;
+  file?: File;
+}
+
+export interface DirListing {
+  prefix: string;
+  tags?: string[];
+  entries: DirEntry[];
+}
+
 export interface UpdateResponse {
   result: string;
   file: File;

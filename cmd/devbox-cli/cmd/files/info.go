@@ -2,12 +2,10 @@ package files
 
 import (
 	"fmt"
-	"net/url"
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
 	completion "github.com/wf-pro-dev/devbox/internal/cmd/completion"
-	"github.com/wf-pro-dev/devbox/types"
 )
 
 func InfoCmd() *cobra.Command {
@@ -38,20 +36,6 @@ func InfoCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// getFileMetaFull fetches full metadata (used by other commands in this package).
-func getFileMetaFull(idOrPath string) (*types.File, error) {
-	u := internal.Server() + "/files/" + url.PathEscape(idOrPath) + "?meta=true"
-	resp, err := internal.GetJSON(u)
-	if err != nil {
-		return nil, err
-	}
-	var f types.File
-	if err := internal.Decode(resp, &f); err != nil {
-		return nil, err
-	}
-	return &f, nil
 }
 
 func nonEmpty(s string) string {

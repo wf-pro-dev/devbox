@@ -14,7 +14,6 @@ If a filename matches more than one file the CLI will ask you to use the path or
 	}
 
 	cmd.AddCommand(
-		LsCmd(),
 		PushCmd(),
 		PullCmd(),
 		InfoCmd(),

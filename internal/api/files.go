@@ -57,7 +57,11 @@ func (h *filesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	params := db.ListFilesParams{}
 	if v := q.Get("dir"); v != "" {
-		p := toPrefix(v)
+		p, err := models.CanonicalDir(v)
+		if err != nil {
+			jsonError(w, "invalid directory path: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		params.Prefix = &p
 	}
 	if v := q.Get("tag"); v != "" {

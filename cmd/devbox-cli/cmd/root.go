@@ -45,5 +45,6 @@ func init() {
 	rootCmd.AddCommand(files.NewCmd())
 	rootCmd.AddCommand(dirs.NewCmd())
 	rootCmd.AddCommand(newPeersCmd())
+	rootCmd.AddCommand(LsCmd())
 	rootCmd.AddCommand(newSetupCmd())
 }

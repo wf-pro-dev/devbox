@@ -2,6 +2,7 @@ import type {
   File, HealthResponse, Peer, Directory, Version, UpdateResponse,
   SendResult, SendDirResult,
   NodeDriftResult, DiffResult,
+  DirListing,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -167,11 +168,11 @@ export const api = {
 // Directories
 // ---------------------------------------------------------------------------
 
-export const listDirectories = (): Promise<Directory[]> =>
-  request<Directory[]>('/dirs');
+export const listDirectories = (): Promise<DirListing> =>
+  request<DirListing>('/dirs');
 
-export const getDirectory = (dir: string): Promise<Directory> =>
-  request<Directory>(`/dirs/${encodeURIComponent(dir)}`);
+export const getDirectory = (dir: string): Promise<DirListing> =>
+  request<DirListing>(`/dirs/${encodeURIComponent(dir)}`);
 
 export const deleteDirectory = (dir: string): Promise<void> =>
   request<void>(`/dirs/${encodeURIComponent(dir)}`, { method: 'DELETE' });

@@ -11,6 +11,7 @@ import (
 	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 
 	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/internal/models"
 	"github.com/wf-pro-dev/devbox/internal/storage"
 	"github.com/wf-pro-dev/devbox/internal/transfer"
 	"github.com/wf-pro-dev/devbox/types"
@@ -67,7 +68,11 @@ func (h *sendHandler) handleSendFile(w http.ResponseWriter, r *http.Request) {
 
 func (h *sendHandler) handleSendDir(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	prefix := toPrefix(r.PathValue("dir"))
+	prefix, err := models.CanonicalDir(r.PathValue("dir"))
+	if err != nil {
+		jsonError(w, "invalid directory path: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	files, err := h.store.Queries.ListFiles(ctx, db.ListFilesParams{Prefix: &prefix})
 	if err != nil || len(files) == 0 {

@@ -6,18 +6,25 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 )
 
 func UpdateCmd() *cobra.Command {
 	var message string
 
 	c := &cobra.Command{
-		Use:   "update <name|id> <local-dir>",
+		Use:   "update <name> <local-dir>",
 		Short: "Sync a local directory to an existing collection",
 		Long: `Syncs a local directory to the collection on the server.
 New files are added. Existing files with changed content get a new version.
 Files only on the server are left untouched (use 'dirs delete' to remove them).`,
 		Args: cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) >= 1 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			return completion.DirCompletions(cmd, args, toComplete)
+		},
 		Example: `  devbox-cli dirs update nginx ./nginx
   devbox-cli dirs update nginx ./nginx -m "update upstream block"`,
 		RunE: func(c *cobra.Command, args []string) error {

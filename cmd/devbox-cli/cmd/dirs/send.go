@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	internal "github.com/wf-pro-dev/devbox/internal/cmd"
+	"github.com/wf-pro-dev/devbox/internal/cmd/completion"
 	tailkitTypes "github.com/wf-pro-dev/tailkit/types"
 )
 
@@ -18,8 +19,9 @@ func SendCmd() *cobra.Command {
 	var all bool
 
 	c := &cobra.Command{
-		Use:  "send <name|id>",
-		Args: cobra.ExactArgs(1),
+		Use:               "send <name|id>",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completion.DirCompletions,
 		Example: `  devbox-cli dirs send nginx --to myhost
   devbox-cli dirs send nginx --to host1,host2 --dest /etc/nginx
   devbox-cli dirs send nginx --all`,

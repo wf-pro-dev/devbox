@@ -19,7 +19,19 @@ func DiffCmd() *cobra.Command {
 		Short: "Compare versions, local files, or remote node files vs vault",
 		Args:  cobra.RangeArgs(1, 3),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			if len(args) >= 1 {
+			if len(args) >= 3 {
+				return []string{}, cobra.ShellCompDirectiveDefault
+			}
+			if len(args) == 2 {
+				return completion.VersionCompletions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				completions, directive := completion.VersionCompletions(cmd, args, toComplete)
+				if directive == cobra.ShellCompDirectiveNoFileComp {
+					localCompletions, localDirective := completion.LocalFileCompletions(cmd, args, toComplete)
+					completions = append(completions, localCompletions...)
+					return completions, localDirective
+				}
 				return []string{}, cobra.ShellCompDirectiveDefault
 			}
 			return completion.FileCompletions(cmd, args, toComplete)
