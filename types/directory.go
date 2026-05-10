@@ -1,7 +1,5 @@
 package types
 
-import "github.com/wf-pro-dev/devbox/internal/db"
-
 // DirEntry is one item in a virtual-directory listing.
 // IsDir distinguishes a virtual sub-directory (collapsed CommonPrefix) from a
 // concrete file.
@@ -18,12 +16,12 @@ type DirEntry struct {
 	Prefix string `json:"prefix,omitempty"`
 
 	// FileCount is the total number of files under Prefix.
-	// Zero for file entries.
+	// One for file entries.
 	FileCount int `json:"file_count,omitempty"`
 
 	// File is set only for file entries.
 	// Nil for directory entries.
-	File *db.File `json:"file,omitempty"`
+	File *File `json:"file,omitempty"`
 }
 
 // DirListing is the response body for GET /dirs and GET /dirs/{dir}.

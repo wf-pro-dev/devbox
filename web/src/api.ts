@@ -89,10 +89,10 @@ export const api = {
       body: JSON.stringify({ path: destPath }),
     }),
 
-  /** POST /files/{id}/move */
+  /** PATCH alias used by Finder grid drag-and-drop */
   moveFile: (id: string, destPath: string): Promise<File> =>
-    request<File>(`/files/${id}/move`, {
-      method: 'POST',
+    request<File>(`/files/${id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: destPath }),
     }),
@@ -168,11 +168,17 @@ export const api = {
 // Directories
 // ---------------------------------------------------------------------------
 
-export const listDirectories = (): Promise<DirListing> =>
-  request<DirListing>('/dirs');
+export const listDirectories = (tag = ""): Promise<DirListing> => {
+  const qs = new URLSearchParams();
+  if (tag) qs.set("tag", tag);
+  return request<DirListing>(`/dirs${qs.toString() ? `?${qs}` : ""}`);
+};
 
-export const getDirectory = (dir: string): Promise<DirListing> =>
-  request<DirListing>(`/dirs/${encodeURIComponent(dir)}`);
+export const getDirectory = (dir: string, tag = ""): Promise<DirListing> => {
+  const qs = new URLSearchParams();
+  if (tag) qs.set("tag", tag);
+  return request<DirListing>(`/dirs/${encodeURIComponent(dir)}${qs.toString() ? `?${qs}` : ""}`);
+};
 
 export const deleteDirectory = (dir: string): Promise<void> =>
   request<void>(`/dirs/${encodeURIComponent(dir)}`, { method: 'DELETE' });
@@ -182,6 +188,11 @@ export const tagDirectory = (dir: string, tags: string[]): Promise<void> =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tags }),
+  });
+
+export const removeDirectoryTag = (dir: string, tag: string): Promise<void> =>
+  request<void>(`/dirs/${encodeURIComponent(dir)}/tags/${encodeURIComponent(tag)}`, {
+    method: "DELETE",
   });
 
 export const sendDirectory = (dir: string, targets: string[], broadcast = false, destDir = ''): Promise<SendDirResult> =>

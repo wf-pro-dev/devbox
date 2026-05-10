@@ -2,6 +2,7 @@
 
 BUILD_TAGS := -tags fts5
 DOCKER_COMPOSE_FILE := docker/docker-compose.yml
+GITHUB_WORKFLOW_DIR := ${HOME}/devbox/.github/workflows
 
 ## Generate sqlc Go code
 generate:
@@ -77,3 +78,11 @@ docker-restart:
 ## Rebuild image and restart (full redeploy)
 docker-deploy:
 	docker compose -f $(DOCKER_COMPOSE_FILE) build && docker compose -f $(DOCKER_COMPOSE_FILE) up -d
+
+
+## ── YTT -────────────────────────────────────────────────────────────────
+
+# generate release.yml
+generate-release:
+	ytt -f ~/ytt/lib -f ~/ytt/devbox.yml > "${GITHUB_WORKFLOW_DIR}/release.yaml"
+

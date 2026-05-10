@@ -4,6 +4,9 @@ import (
 	"errors"
 	"path"
 	"strings"
+
+	"github.com/wf-pro-dev/devbox/internal/db"
+	"github.com/wf-pro-dev/devbox/types"
 )
 
 // ── Sentinel errors ────────────────────────────────────────────────────────
@@ -171,29 +174,6 @@ func Join(prefix, rel string) string {
 	return path.Clean(prefix + rel)
 }
 
-// ── CommonPrefix listing (S3 / GCS model) ─────────────────────────────────
-
-// Entry is a single item in a virtual directory listing — either a file
-// (IsDir == false) or a virtual sub-directory (IsDir == true).
-type Entry[F any] struct {
-	// Name is the bare segment name: "nginx.conf" or "config" (no slashes).
-	Name string
-
-	// Prefix is set for directories: "/myapp/config/".
-	// Empty for file entries.
-	Prefix string
-
-	// IsDir distinguishes sub-directories from files.
-	IsDir bool
-
-	// File holds the underlying file record when IsDir is false.
-	// For directory entries the zero value is stored.
-	File F
-
-	// FileCount is the total number of files under Prefix (directories only).
-	FileCount int
-}
-
 // PathOf is a function that extracts the canonical path from a file record F.
 // Callers supply this to decouple the algorithm from the concrete db.File type.
 type PathOf[F any] func(F) string
@@ -217,7 +197,7 @@ type PathOf[F any] func(F) string
 //  3. If it contains a "/", everything up to and including the first "/" is a
 //     CommonPrefix (virtual sub-directory) → accumulate counts, emit once when
 //     the prefix changes.
-func ListDirect[F any](files []F, prefix string, pathOf PathOf[F]) []Entry[F] {
+func ListDirect(files []db.File, prefix string, pathOf PathOf[db.File]) []types.DirEntry {
 	// Normalise prefix: must end with "/" and start with "/".
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -227,7 +207,7 @@ func ListDirect[F any](files []F, prefix string, pathOf PathOf[F]) []Entry[F] {
 	}
 
 	var (
-		result      []Entry[F]
+		result      []types.DirEntry
 		lastSubdir  string // tracks the current common-prefix accumulation
 		subdirCount int
 	)
@@ -238,14 +218,14 @@ func ListDirect[F any](files []F, prefix string, pathOf PathOf[F]) []Entry[F] {
 		}
 		// Segment name without slashes for display.
 		seg := strings.Trim(lastSubdir[len(prefix):], "/")
-		result = append(result, Entry[F]{
+		result = append(result, types.DirEntry{
 			Name:      seg,
 			Prefix:    lastSubdir,
 			IsDir:     true,
 			FileCount: subdirCount,
 		})
 		lastSubdir = ""
-		subdirCount = 0
+		subdirCount = 1
 	}
 
 	for _, f := range files {
@@ -262,10 +242,11 @@ func ListDirect[F any](files []F, prefix string, pathOf PathOf[F]) []Entry[F] {
 		if slashIdx < 0 {
 			// Direct file child — flush any pending sub-directory first.
 			flush()
-			result = append(result, Entry[F]{
-				Name:  rel,
-				IsDir: false,
-				File:  f,
+			result = append(result, types.DirEntry{
+				Name:      rel,
+				IsDir:     false,
+				File:      &types.File{File: f},
+				FileCount: 1,
 			})
 		} else {
 			// The file lives inside a sub-directory.

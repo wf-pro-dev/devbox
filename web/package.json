@@ -14,6 +14,7 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@thisux/sveltednd": "^0.4.1",
     "svelte-highlight": "^7.9.0",
     "svelte-sonner": "^1.1.0"
   }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -72,25 +73,57 @@ func dbPrefixParam(prefix string) *string {
 // When deep is true the listing is a flat enumeration of every file under
 // prefix with no directory collapsing — the equivalent of find(1) -type f.
 // When deep is false only direct children are returned (ls -1 style).
-func listingFromFiles(files []db.File, prefix string, deep bool) types.DirListing {
+func listingFromFiles(h *dirsHandler, files []db.File, prefix string, deep bool) types.DirListing {
 	listing := types.DirListing{
 		Prefix:  prefix,
 		Entries: make([]types.DirEntry, 0, len(files)),
 	}
 
 	if deep {
+		ids := make([]string, len(files))
+		for i := range files {
+			ids[i] = files[i].ID
+		}
+		tagMap := buildTagMap(context.Background(), h.store.Queries, ids)
+
 		for i := range files {
 			f := &files[i]
 			listing.Entries = append(listing.Entries, types.DirEntry{
-				Name:  filepath.Base(f.Path),
-				IsDir: false,
-				File:  f,
+				Name:      filepath.Base(f.Path),
+				IsDir:     false,
+				File:      &types.File{File: *f, Tags: tagMap[f.ID]},
+				FileCount: 1,
 			})
 		}
 		return listing
 	}
 
-	for _, e := range models.ListDirect(files, prefix, pathOfDBFile) {
+	listingEntries := models.ListDirect(files, prefix, pathOfDBFile)
+	var listingFiles []*types.File
+	for _, f := range listingEntries {
+		if f.IsDir {
+			continue
+		}
+		listingFiles = append(listingFiles, f.File)
+	}
+
+	finalFiles := make([]*types.File, len(listingFiles))
+	for i, f := range listingFiles {
+		if f == nil {
+			continue
+		}
+		finalFiles[i] = f
+	}
+
+	ids := make([]string, len(finalFiles))
+	for i, f := range finalFiles {
+		ids[i] = f.ID
+	}
+
+	ctx := context.Background()
+	tagMap := buildTagMap(ctx, h.store.Queries, ids)
+
+	for _, e := range listingEntries {
 		entry := types.DirEntry{
 			Name:      e.Name,
 			IsDir:     e.IsDir,
@@ -99,7 +132,8 @@ func listingFromFiles(files []db.File, prefix string, deep bool) types.DirListin
 		}
 		if !e.IsDir {
 			f := e.File // local copy for a stable address
-			entry.File = &f
+			entry.File = f
+			entry.File.Tags = tagMap[f.ID]
 		}
 		listing.Entries = append(listing.Entries, entry)
 	}
@@ -137,7 +171,7 @@ func (h *dirsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listing := listingFromFiles(files, prefix, r.URL.Query().Get("depth") == "all")
+	listing := listingFromFiles(h, files, prefix, r.URL.Query().Get("depth") == "all")
 	if prefix != "/" {
 		listing.Tags = prefixTags(ctx, h.store.Queries, prefix)
 	}
@@ -179,7 +213,7 @@ func (h *dirsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deep := r.URL.Query().Get("recursive") == "true" || r.URL.Query().Get("depth") == "all"
-	listing := listingFromFiles(files, prefix, deep)
+	listing := listingFromFiles(h, files, prefix, deep)
 	listing.Tags = prefixTags(ctx, h.store.Queries, prefix)
 
 	jsonOK(w, listing)
@@ -307,7 +341,7 @@ func (h *dirsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		createdFiles = append(createdFiles, file.File)
 	}
 
-	listing := listingFromFiles(createdFiles, prefix, false)
+	listing := listingFromFiles(h, createdFiles, prefix, false)
 	listing.Tags = tagNames
 	jsonCreated(w, listing)
 }
