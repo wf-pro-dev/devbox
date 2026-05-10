@@ -1,5 +1,5 @@
 name: Release
-true:
+"on":
   push:
     tags:
     - v*
@@ -20,56 +20,53 @@ jobs:
         PATCH=$(echo "$VERSION" | cut -d. -f3)
         if [ "$PATCH" = "0" ]; then echo "push_images=true" >> "$GITHUB_OUTPUT"; else echo "push_images=false" >> "$GITHUB_OUTPUT"; fi
   release-cli:
-    goreleaser:
-      runs-on: ubuntu-latest
-      steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        distribution: goreleaser
+        version: latest
+        args: release --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   docker:
     needs: version-check
     if: needs.version-check.outputs.push_images == 'true'
-    _:
-      docker-mirror:
-        runs-on: ubuntu-latest
-        steps:
-        - name: Log in to Local Registry
-          uses: docker/login-action@v3
-          with:
-            registry: docker-registry.wwwill.xyz
-            username: ${{ secrets.REGISTRY_USER }}
-            password: ${{ secrets.REGISTRY_PASS }}
-        - name: Log in to GHCR
-          uses: docker/login-action@v3
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
-        - name: Mirror devbox/backend -> ghcr.io/wf-pro-dev/wf-pro-dev/devbox/backend
-          env:
-            SOURCE_IMG: docker-registry.wwwill.xyz/devbox/backend
-            DEST_IMG: ghcr.io/wf-pro-dev/wf-pro-dev/devbox/backend
-          run: |
-            docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
-            docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
-            docker push "${DEST_IMG}:${{ github.ref_name }}"
-        - name: Mirror devbox/ui -> ghcr.io/wf-pro-dev/wf-pro-dev/devbox/ui
-          env:
-            SOURCE_IMG: docker-registry.wwwill.xyz/devbox/ui
-            DEST_IMG: ghcr.io/wf-pro-dev/wf-pro-dev/devbox/ui
-          run: |
-            docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
-            docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
-            docker push "${DEST_IMG}:${{ github.ref_name }}"
+    runs-on: ubuntu-latest
+    steps:
+    - name: Log in to Local Registry
+      uses: docker/login-action@v3
+      with:
+        registry: docker-registry.wwwill.xyz
+        username: ${{ secrets.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_PASS }}
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Mirror devbox/backend -> ghcr.io/wf-pro-dev/devbox/backend
+      env:
+        SOURCE_IMG: docker-registry.wwwill.xyz/devbox/backend
+        DEST_IMG: ghcr.io/wf-pro-dev/devbox/backend
+      run: |
+        docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
+        docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
+        docker push "${DEST_IMG}:${{ github.ref_name }}"
+    - name: Mirror devbox/ui -> ghcr.io/wf-pro-dev/devbox/ui
+      env:
+        SOURCE_IMG: docker-registry.wwwill.xyz/devbox/ui
+        DEST_IMG: ghcr.io/wf-pro-dev/devbox/ui
+      run: |
+        docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
+        docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
+        docker push "${DEST_IMG}:${{ github.ref_name }}"
