@@ -55,7 +55,7 @@ release:
     name: devbox
   draft: false
   prerelease: auto
-  name_template: "vi{{.Version}}"
+  name_template: "v{{.Version}}"
   extra_files:
     - glob: ./install.sh
     - glob: ./docker/deploy/docker-compose.yml

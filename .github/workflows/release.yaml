@@ -63,6 +63,7 @@ jobs:
         docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
         docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:${{ github.ref_name }}"
+        docker push "${DEST_IMG}:latest"
     - name: Mirror devbox/ui -> ghcr.io/wf-pro-dev/devbox/ui
       env:
         SOURCE_IMG: docker-registry.wwwill.xyz/devbox/ui
@@ -71,3 +72,4 @@ jobs:
         docker pull "${SOURCE_IMG}:${{ github.ref_name }}"
         docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:${{ github.ref_name }}"
+        docker push "${DEST_IMG}:latest"
