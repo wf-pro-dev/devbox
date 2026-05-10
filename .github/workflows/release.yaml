@@ -40,6 +40,7 @@ jobs:
   docker:
     needs: version-check
     if: needs.version-check.outputs.push_images == 'true'
+    environment: devbox
     runs-on: ubuntu-latest
     steps:
     - name: Log in to Local Registry
