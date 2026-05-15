@@ -65,6 +65,7 @@ jobs:
         docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:latest"
         docker push "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:latest"
+    - name: Final Status
     - name: Mirror devbox/ui -> ghcr.io/wf-pro-dev/devbox/ui
       env:
         SOURCE_IMG: docker-registry.wwwill.xyz/devbox/ui
@@ -75,9 +76,12 @@ jobs:
         docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:latest"
         docker push "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:latest"
+    - name: Final Status
   docker-fallback:
-    needs: docker
-    if: needs.docker.result == 'failure'
+    needs:
+    - version-check
+    - docker
+    if: always() && needs.version-check.outputs.push_images == 'true' && (needs.docker.result == 'failure' || needs.docker.result == 'cancelled')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
