@@ -1,4 +1,4 @@
-name: Release
+name: Devbox Release
 "on":
   push:
     tags:
@@ -19,7 +19,7 @@ jobs:
         VERSION="${TAG#v}"
         PATCH=$(echo "$VERSION" | cut -d. -f3)
         if [ "$PATCH" = "0" ]; then echo "push_images=true" >> "$GITHUB_OUTPUT"; else echo "push_images=false" >> "$GITHUB_OUTPUT"; fi
-  release-cli:
+  cli:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -75,3 +75,49 @@ jobs:
         docker tag  "${SOURCE_IMG}:${{ github.ref_name }}" "${DEST_IMG}:latest"
         docker push "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:latest"
+  docker-fallback:
+    needs:
+    - version-check
+    - docker-mirror
+    if: needs.version-check.outputs.push_images == 'true' && needs.docker-mirror.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build & push devbox/backend -> ghcr.io/wf-pro-dev/devbox/backend
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: docker/build/Dockerfile.backend
+        platforms: linux/amd64,linux/arm64
+        push: true
+        env:
+          DEST_IMG: ghcr.io/wf-pro-dev/devbox/backend
+        tags: |
+          "${DEST_IMG}:${{ github.ref_name }}"
+          "${DEST_IMG}:latest"
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Build & push devbox/ui -> ghcr.io/wf-pro-dev/devbox/ui
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: docker/build/Dockerfile.ui
+        platforms: linux/amd64,linux/arm64
+        push: true
+        env:
+          DEST_IMG: ghcr.io/wf-pro-dev/devbox/ui
+        tags: |
+          "${DEST_IMG}:${{ github.ref_name }}"
+          "${DEST_IMG}:latest"
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
