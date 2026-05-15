@@ -84,5 +84,5 @@ docker-deploy:
 
 # generate release.yml
 generate-release:
-	ytt -f ~/ytt/lib -f ~/ytt/devbox.release.yml > "${GITHUB_WORKFLOW_DIR}/release.yaml"
+	ytt -f ~/ytt/lib -f ~/ytt/devbox.release.yml > "${GITHUB_WORKFLOW_DIR}/release.yml"
 
