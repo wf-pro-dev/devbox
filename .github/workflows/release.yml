@@ -76,10 +76,8 @@ jobs:
         docker push "${DEST_IMG}:${{ github.ref_name }}"
         docker push "${DEST_IMG}:latest"
   docker-fallback:
-    needs:
-    - version-check
-    - docker
-    if: needs.version-check.outputs.push_images == 'true' && needs.docker.result == 'failure'
+    needs: docker
+    if: needs.docker.result == 'failure'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
