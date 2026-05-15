@@ -7,7 +7,7 @@ export interface Blob {
 }
 
 export interface File {
-  id: string;
+  id?: string;
   path: string;
   local_path?: string; // absolute path on the target node where the file lives
   file_name: string;
@@ -20,6 +20,8 @@ export interface File {
   created_at: string;
   updated_at: string;
   tags?: string[];
+  source?: "local" | "remote";
+  hostname?: string;
 }
 
 export interface FileTag {
@@ -98,18 +100,28 @@ export interface Directory {
   files?: File[];
 }
 
+export interface DirectoryStats {
+  total_size: number;
+  latest_updated_at?: string;
+  oldest_created_at?: string;
+  oldest_uploaded_by?: string;
+}
+
 export interface DirEntry {
   name: string;
   is_dir: boolean;
   prefix?: string;
   file_count?: number;
+  stats?: DirectoryStats;
   file?: File;
+  baseLength?: number;
 }
 
 export interface DirListing {
   prefix: string;
   tags?: string[];
   entries: DirEntry[];
+  baseLength?: number;
 }
 
 export interface UpdateResponse {
@@ -182,6 +194,22 @@ export interface ParsedLine {
   oldNo: number | null;
   /** Line number in the new (right) file, null for deletions */
   newNo: number | null;
+}
+
+// Locations
+export interface Location {
+  Hostname: string;
+  Paths: PathRule[];
+}
+
+export interface FinderLocation {
+  kind: "local" | "remote";
+  hostname?: string;
+}
+
+export interface PathRule {
+  Dir: string;
+  Allow: string[];
 }
 
 // ---------------------------------------------------------------------------

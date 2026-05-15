@@ -56,6 +56,10 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 		srv:      srv,
 	}
 
+	lh := &locationsHandler{
+		srv: srv,
+	}
+
 	root := http.NewServeMux()
 	protected := http.NewServeMux()
 
@@ -94,6 +98,11 @@ func NewRouter(srv *tailkit.Server, store *storage.Store, blobs *storage.BlobSto
 	protected.HandleFunc("DELETE /dirs/{dir}/tags/{tag}", dh.handleRemoveTag)
 	protected.HandleFunc("POST /dirs/{dir}/diff", dh.handleDiff)
 	protected.HandleFunc("POST /dirs/{dir}/send", sh.handleSendDir)
+
+	// ── Locations ─────────────────────────────────────────────────────────────
+	protected.HandleFunc("GET /locations", lh.handleGetLocations)
+	protected.HandleFunc("GET /locations/{hostname}/dirs", lh.handleGetLocationDirs)
+	protected.HandleFunc("GET /locations/{hostname}/files", lh.handleGetLocationFile)
 
 	// ── Search ───────────────────────────────────────────────────────────────
 	protected.HandleFunc("GET /search", sch.handleSearch)

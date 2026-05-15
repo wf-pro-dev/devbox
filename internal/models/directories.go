@@ -9,6 +9,40 @@ import (
 	"github.com/wf-pro-dev/devbox/types"
 )
 
+type dirAccumulator struct {
+	fileCount        int
+	totalSize        int64
+	latestUpdatedAt  string
+	oldestCreatedAt  string
+	oldestUploadedBy string
+}
+
+func newerTimestamp(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	if a >= b {
+		return a
+	}
+	return b
+}
+
+func olderTimestamp(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	if a <= b {
+		return a
+	}
+	return b
+}
+
 // ── Sentinel errors ────────────────────────────────────────────────────────
 
 var (
@@ -209,23 +243,32 @@ func ListDirect(files []db.File, prefix string, pathOf PathOf[db.File]) []types.
 	var (
 		result      []types.DirEntry
 		lastSubdir  string // tracks the current common-prefix accumulation
-		subdirCount int
+		subdirStats = map[string]*dirAccumulator{}
 	)
 
 	flush := func() {
 		if lastSubdir == "" {
 			return
 		}
+		stats := subdirStats[lastSubdir]
 		// Segment name without slashes for display.
 		seg := strings.Trim(lastSubdir[len(prefix):], "/")
-		result = append(result, types.DirEntry{
-			Name:      seg,
-			Prefix:    lastSubdir,
-			IsDir:     true,
-			FileCount: subdirCount,
-		})
+		entry := types.DirEntry{
+			Name:   seg,
+			Prefix: lastSubdir,
+			IsDir:  true,
+		}
+		if stats != nil {
+			entry.FileCount = stats.fileCount
+			entry.Stats = &types.DirectoryStats{
+				TotalSize:        stats.totalSize,
+				LatestUpdatedAt:  stats.latestUpdatedAt,
+				OldestCreatedAt:  stats.oldestCreatedAt,
+				OldestUploadedBy: stats.oldestUploadedBy,
+			}
+		}
+		result = append(result, entry)
 		lastSubdir = ""
-		subdirCount = 1
 	}
 
 	for _, f := range files {
@@ -252,14 +295,29 @@ func ListDirect(files []db.File, prefix string, pathOf PathOf[db.File]) []types.
 			// The file lives inside a sub-directory.
 			// The sub-directory prefix is everything up to and including the "/".
 			subPrefix := prefix + rel[:slashIdx+1]
+			stats := subdirStats[subPrefix]
+			if stats == nil {
+				stats = &dirAccumulator{}
+				subdirStats[subPrefix] = stats
+			}
+			stats.fileCount++
+			stats.totalSize += f.Size
+			updatedAt := f.UpdatedAt
+			if updatedAt == "" {
+				updatedAt = f.CreatedAt
+			}
+			stats.latestUpdatedAt = newerTimestamp(stats.latestUpdatedAt, updatedAt)
+			prevOldest := stats.oldestCreatedAt
+			stats.oldestCreatedAt = olderTimestamp(stats.oldestCreatedAt, f.CreatedAt)
+			if prevOldest == "" || stats.oldestCreatedAt != prevOldest {
+				stats.oldestUploadedBy = f.UploadedBy
+			}
 			if subPrefix == lastSubdir {
-				// Same sub-directory as the previous file — just count.
-				subdirCount++
+				// Same sub-directory as the previous file — stats already updated.
 			} else {
 				// New sub-directory encountered — flush the previous one.
 				flush()
 				lastSubdir = subPrefix
-				subdirCount = 1
 			}
 		}
 	}

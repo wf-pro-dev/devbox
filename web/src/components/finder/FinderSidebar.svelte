@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { HealthResponse, Peer } from "../../types";
+  import type { HealthResponse, Peer, Location } from "../../types";
+  import { onMount } from "svelte";
+  import { getLocations } from "../../api";
 
   export let health: HealthResponse | null = null;
   export let allTags: Array<{ name: string; count: number; color: string }> = [];
@@ -7,6 +9,18 @@
   export let activeTag = "";
   export let onSelectTag: (tag: string) => void = () => {};
   export let onSelectRoot: () => void = () => {};
+  export let onSelectLocation: (hostname: string) => void = () => {};
+  let locations: Location[] = [];
+  let locationsLoading = true;
+
+  onMount(async () => {
+    try {
+      locations = await getLocations();
+      locationsLoading = false;
+    } catch (e: unknown) {
+      console.error(e);
+    }
+  });
 </script>
 
 <aside class="finder-sidebar">
@@ -16,10 +30,16 @@
       <span class="dot home"></span>
       <span>Devbox</span>
     </button>
-    <button class="row loc">
-      <span class="dot recent"></span>
-      <span>Recent</span>
-    </button>
+   {#if locationsLoading}
+      <p class="muted">Loading locations…</p>
+    {:else}
+      {#each locations as location}
+        <button class="row loc" on:click={() => onSelectLocation(location.Hostname)}>
+          <span class="dot home"></span>
+          <span>{location.Hostname}</span>
+        </button>
+      {/each}
+    {/if}
   </section>
 
   <section>

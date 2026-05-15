@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, listPeers, deleteDirectory } from "../../api";
-  import type { DirEntry, File, HealthResponse, Peer } from "../../types";
+  import type { DirEntry, File, FinderLocation, HealthResponse, Peer } from "../../types";
   import { toast } from "svelte-sonner";
   import SendModal from "../SendModal.svelte";
   import UploadModal from "../UploadModal.svelte";
@@ -15,11 +15,13 @@
   import PreviewPane from "./PreviewPane.svelte";
   import RenameFileModal from "./RenameFileModal.svelte";
   import { tagColor } from "./fileColor";
+  import { entryPath } from "./entryPaths";
 
   export let health: HealthResponse | null = null;
   export let onFileSelect: (f: File) => void = () => {};
 
   let columns: string[] = ["/"];
+  let location: FinderLocation = { kind: "local" };
   let selectedEntry: DirEntry | null = null;
   let viewMode: "column" | "list" | "grid" = "column";
   let activeTag = "";
@@ -38,6 +40,7 @@
 
 
   $: currentPrefix = columns.at(-1) ?? "/";
+  $: locationLabel = location.kind === "remote" ? location.hostname ?? "remote" : "devbox";
   $: allTags = Object.entries(
     Object.values(visibleEntries)
       .flat()
@@ -54,10 +57,41 @@
     peers = await listPeers().catch(() => []);
   });
 
+  function canonicalPrefix(prefix: string) {
+    if (!prefix || prefix === "/") return "/";
+    let normalized = prefix.startsWith("/") ? prefix : `/${prefix}`;
+    if (!normalized.endsWith("/")) normalized += "/";
+    return normalized;
+  }
+
   function prefixToColumns(prefix: string) {
-    if (prefix === "/") return ["/"];
-    const segments = prefix.replace(/^\/|\/$/g, "").split("/").filter(Boolean);
-    return ["/", ...segments.map((_, i) => segments.slice(0, i + 1).join("/"))];
+    const canonical = canonicalPrefix(prefix);
+    if (canonical === "/") return ["/"];
+    const segments = canonical.replace(/^\/|\/$/g, "").split("/").filter(Boolean);
+    const result = ["/"];
+    let current = "/";
+    for (const segment of segments) {
+      current = current === "/" ? `/${segment}/` : `${current}${segment}/`;
+      result.push(current);
+    }
+    return result;
+  }
+
+  function locationKey(loc: FinderLocation) {
+    return loc.kind === "remote" ? `remote:${loc.hostname ?? ""}` : "local";
+  }
+
+  function scopedPrefixKey(prefix: string, loc: FinderLocation = location) {
+    return `${locationKey(loc)}:${canonicalPrefix(prefix)}`;
+  }
+
+  function entryIdentity(entry: DirEntry | null) {
+    if (!entry) return "";
+    if (entry.is_dir) return `dir:${canonicalPrefix(entry.prefix ?? "/")}`;
+    const path = entry.file?.path ?? entryPath(entry);
+    const host = entry.file?.hostname ?? location.hostname ?? "";
+    const source = entry.file?.source ?? location.kind;
+    return `file:${source}:${host}:${path}`;
   }
 
   function navigateToPrefix(
@@ -65,7 +99,8 @@
     mode: "push" | "back" | "forward" | "replace" = "push",
     clearSelection = true,
   ) {
-    if (nextPrefix === currentPrefix) return;
+    const canonicalNextPrefix = canonicalPrefix(nextPrefix);
+    if (canonicalNextPrefix === currentPrefix) return;
 
     if (mode === "push") {
       backHistory = [...backHistory, currentPrefix];
@@ -76,8 +111,18 @@
       backHistory = [...backHistory, currentPrefix];
     }
 
-    columns = prefixToColumns(nextPrefix);
+    columns = prefixToColumns(canonicalNextPrefix);
     if (clearSelection) selectedEntry = null;
+  }
+
+  function switchLocation(next: FinderLocation) {
+    location = next;
+    columns = ["/"];
+    selectedEntry = null;
+    previewFile = null;
+    visibleEntries = {};
+    backHistory = [];
+    forwardHistory = [];
   }
 
   function selectEntry(entry: DirEntry, colDepth: number) {
@@ -89,7 +134,13 @@
   function openEntry(entry: DirEntry) {
     selectedEntry = entry;
     if (entry.is_dir && entry.prefix) {
-      navigateToPrefix(entry.prefix, "push", false);
+      let prefix = entry.prefix;
+      if (location.kind === "remote") {
+        // Remove the base length of the prefix to get the relative prefix
+        columns = entry.prefix.split("/").filter((segment) => segment !== "");
+        prefix = canonicalPrefix(columns.slice(entry.baseLength ?? 0).join("/"));
+      }
+      navigateToPrefix(prefix, "push", false);
       return;
     }
     if (entry.file) {
@@ -117,12 +168,8 @@
   }
 
   function invalidateColumn(prefix: string) {
-    columnInvalidators = { ...columnInvalidators, [prefix]: Date.now() };
-  }
-
-  function normalizePrefix(prefix: string) {
-    if (!prefix || prefix === "/") return "/";
-    return prefix.startsWith("/") ? prefix : `/${prefix}`;
+    const key = scopedPrefixKey(prefix);
+    columnInvalidators = { ...columnInvalidators, [key]: Date.now() };
   }
 
   function handleColumnMove(payload: {
@@ -132,14 +179,14 @@
     sourcePrefix: string;
     targetPrefix: string;
   }) {
-    const sourcePrefix = normalizePrefix(payload.sourcePrefix);
-    const targetPrefix = normalizePrefix(payload.targetPrefix);
+    const sourcePrefix = canonicalPrefix(payload.sourcePrefix);
+    const targetPrefix = canonicalPrefix(payload.targetPrefix);
 
     invalidateColumn(sourcePrefix);
     invalidateColumn(targetPrefix);
 
     for (const openPrefix of columns) {
-      const normalized = normalizePrefix(openPrefix);
+      const normalized = canonicalPrefix(openPrefix);
       if (
         normalized === sourcePrefix ||
         normalized === targetPrefix ||
@@ -158,7 +205,8 @@
   }
 
   function updateEntries(prefix: string, entries: DirEntry[]) {
-    visibleEntries = { ...visibleEntries, [prefix]: entries };
+    const key = scopedPrefixKey(prefix);
+    visibleEntries = { ...visibleEntries, [key]: entries };
   }
 
   function showCtxMenu(e: MouseEvent, entry: DirEntry | null) {
@@ -167,6 +215,10 @@
   }
 
   function handleDelete(entry: DirEntry) {
+    if (location.kind !== "local") {
+      toast.error("Delete is only available for devbox files");
+      return;
+    }
     const label = entry.is_dir ? `directory "${entry.name}"` : `"${entry.name}"`;
     toast(`Delete ${label}?`, {
       action: {
@@ -189,6 +241,13 @@
   function handleDownload(entry: DirEntry | null = selectedEntry) {
     if (!entry) return;
     const a = document.createElement("a");
+    if (location.kind === "remote" && location.hostname && entry.file) {
+      const qs = new URLSearchParams({ path: entry.file.path });
+      a.href = `/locations/${location.hostname}/files?${qs}`;
+      a.download = entry.file.file_name;
+      a.click();
+      return;
+    }
     a.href = entry.is_dir ? `/dirs/${encodeURIComponent(entry.prefix ?? "")}?content=true` : `/files/${entry.file?.id}`;
     if (!entry.is_dir && entry.file) a.download = entry.file.file_name;
     a.click();
@@ -201,6 +260,7 @@
   }
 
   async function submitRename(path: string) {
+    if (!renameFile?.id) return;
     if (!renameFile) return;
     renaming = true;
     try {
@@ -262,27 +322,31 @@
   />
 
   <div class="finder-body">
-    <FinderSidebar
+      <FinderSidebar
       {health}
       {peers}
       {activeTag}
       {allTags}
       onSelectTag={(t) => activeTag = activeTag === t ? "" : t}
       onSelectRoot={() => {
-        navigateToPrefix("/");
+        switchLocation({ kind: "local" });
+      }}
+      onSelectLocation={(hostname) => {
+        switchLocation({ kind: "remote", hostname });
       }}
     />
 
     <div class="finder-content">
       {#if viewMode === "column"}
         <div class="finder-columns">
-          {#each columns as prefix, i (prefix + (columnInvalidators[prefix] ?? 0))}
+          {#each columns as prefix, i (scopedPrefixKey(prefix) + (columnInvalidators[scopedPrefixKey(prefix)] ?? 0))}
             <DirColumn
               {prefix}
+              {location}
               {activeTag}
               {selectedEntry}
               depth={i}
-              invalidate={columnInvalidators[prefix] ?? 0}
+              invalidate={columnInvalidators[scopedPrefixKey(prefix)] ?? 0}
               onSelect={(entry) => selectEntry(entry, i)}
               onOpen={openEntry}
               onContextMenu={showCtxMenu}
@@ -294,9 +358,10 @@
       {:else if viewMode === "list"}
         <ListView
           prefix={currentPrefix}
+          {location}
           {activeTag}
           {selectedEntry}
-          invalidate={columnInvalidators[currentPrefix] ?? 0}
+          invalidate={columnInvalidators[scopedPrefixKey(currentPrefix)] ?? 0}
           onSelect={(entry) => selectEntry(entry, columns.length - 1)}
           onOpen={openEntry}
           onContextMenu={showCtxMenu}
@@ -308,10 +373,11 @@
       {:else}
         <GridView
           prefix={currentPrefix}
+          {location}
           {activeTag}
           {selectedEntry}
           {iconSize}
-          invalidate={columnInvalidators[currentPrefix] ?? 0}
+          invalidate={columnInvalidators[scopedPrefixKey(currentPrefix)] ?? 0}
           onSelect={(entry) => selectEntry(entry, columns.length - 1)}
           onOpen={openEntry}
           onContextMenu={showCtxMenu}
@@ -339,8 +405,8 @@
   </div>
 
   <div class="finder-statusbar">
-    <span>{Object.values(visibleEntries[currentPrefix] ?? []).length} items</span>
-    <span>{selectedEntry ? selectedEntry.name : "No selection"}</span>
+    <span>{(visibleEntries[scopedPrefixKey(currentPrefix)] ?? []).length} items</span>
+    <span>{locationLabel}: {selectedEntry ? selectedEntry.name : "No selection"}</span>
   </div>
 </div>
 
@@ -354,6 +420,7 @@
       if (ctxMenu?.entry?.file) previewFile = ctxMenu.entry.file;
     }}
     onSend={() => {
+      if (location.kind !== "local") return;
       if (ctxMenu?.entry) selectedEntry = ctxMenu.entry;
       showSend = true;
     }}
@@ -362,18 +429,24 @@
     }}
     onDownload={() => handleDownload(ctxMenu?.entry ?? null)}
     onRename={() => {
+      if (location.kind !== "local") return;
       if (ctxMenu?.entry?.file) renameFile = ctxMenu.entry.file;
     }}
     onCopyPath={() => handleCopyPath(ctxMenu?.entry ?? null)}
     onDiff={() => {
+      if (location.kind !== "local") return;
       if (ctxMenu?.entry) selectedEntry = ctxMenu.entry;
-      focusPreview("diff");
+      if (ctxMenu?.entry?.file) previewFile = ctxMenu.entry.file;
     }}
     onStatus={() => {
+      if (location.kind !== "local") return;
       if (ctxMenu?.entry) selectedEntry = ctxMenu.entry;
-      focusPreview("fleet");
+      if (ctxMenu?.entry?.file) previewFile = ctxMenu.entry.file;
     }}
-    onUploadHere={() => showUpload = true}
+    onUploadHere={() => {
+      if (location.kind !== "local") return;
+      showUpload = true;
+    }}
   />
 {/if}
 
@@ -394,7 +467,7 @@
   />
 {/if}
 
-{#if showUpload}
+{#if showUpload && location.kind === "local"}
   <UploadModal
     on:close={() => showUpload = false}
     on:uploaded={() => {
@@ -407,6 +480,7 @@
 {#if previewFile}
   <PreviewModal
     file={previewFile}
+    {location}
     on:close={() => previewFile = null}
     on:deleted={() => {
       previewFile = null;

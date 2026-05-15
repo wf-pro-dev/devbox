@@ -3,6 +3,7 @@ import type {
   SendResult, SendDirResult,
   NodeDriftResult, DiffResult,
   DirListing,
+  Location,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -202,6 +203,30 @@ export const sendDirectory = (dir: string, targets: string[], broadcast = false,
     body: JSON.stringify({ targets, broadcast, dest_dir: destDir }),
   });
 
+
+  // ── Locations ─────────────────────────────────────────────────────────────
+
+export const getLocations = (): Promise<Location[]> =>
+  request<Location[]>('/locations');
+
+export const getLocationDirs = (hostname: string): Promise<DirListing[]> =>
+  request<DirListing[]>(`/locations/${hostname}/dirs`);
+
+export const getLocationDirectory = (hostname: string, prefix: string): Promise<DirListing> => {
+  const qs = new URLSearchParams({ prefix });
+  return request<DirListing>(`/locations/${hostname}/dirs?${qs}`);
+};
+
+export const getLocationFileMeta = (hostname: string, path: string): Promise<File> => {
+  const qs = new URLSearchParams({ path, meta: "true" });
+  return request<File>(`/locations/${hostname}/files?${qs}`);
+};
+
+export function locationFileContentURL(hostname: string, path: string): string {
+  const qs = new URLSearchParams({ path });
+  return `/locations/${hostname}/files?${qs}`;
+}
+
 // ---------------------------------------------------------------------------
 // Peers
 // ---------------------------------------------------------------------------
@@ -229,6 +254,7 @@ export function formatDate(iso: string): string {
 }
 
 export function formatDateShort(iso: string): string {
+  if (!iso) return "—";
   return new Date(iso).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
   });

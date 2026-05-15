@@ -9,6 +9,7 @@
   export let prefix = "/";
   export let selected = false;
   export let moving = false;
+  export let dragEnabled = true;
   export let onSelect: (entry: DirEntry) => void = () => {};
   export let onOpen: (entry: DirEntry) => void = () => {};
   export let onContextMenu: (e: MouseEvent, entry: DirEntry) => void = () => {};
@@ -21,7 +22,7 @@
   class:selected
   class:moving
   class="container"
-  use:draggable={{ container: prefix, dragData: entry }}
+  use:draggable={dragEnabled ? { container: prefix, dragData: entry } : undefined}
   on:click={() => onSelect(entry)}
   on:dblclick={() => onOpen(entry)}
   on:contextmenu|preventDefault={(e) => onContextMenu(e, entry)}
@@ -54,9 +55,9 @@
     )}</td
   >
   <td class="actions">
-    <button aria-label="Send" title="Send" on:click|stopPropagation={() => onQuickSend(entry)}><i class="ti ti-send"></i></button>
+    <button aria-label="Send" title="Send" disabled={entry.file?.source === "remote"} on:click|stopPropagation={() => onQuickSend(entry)}><i class="ti ti-send"></i></button>
     <button aria-label="Download" title="Download" on:click|stopPropagation={() => onQuickDownload(entry)}><i class="ti ti-download"></i></button>
-    <button aria-label="Delete" title="Delete" class="danger" on:click|stopPropagation={() => onQuickDelete(entry)}><i class="ti ti-trash"></i></button>
+    <button aria-label="Delete" title="Delete" class="danger" disabled={entry.file?.source === "remote"} on:click|stopPropagation={() => onQuickDelete(entry)}><i class="ti ti-trash"></i></button>
   </td>
 </tr>
 
@@ -136,6 +137,10 @@
   }
   .actions button:hover {
     background: rgba(255, 255, 255, 0.8);
+  }
+  .actions button:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
   tr.selected .actions button:hover {
     background: rgba(43, 92, 230, 0.1);

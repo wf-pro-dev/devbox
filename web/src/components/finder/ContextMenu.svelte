@@ -37,6 +37,8 @@
     action();
     onClose();
   }
+
+  $: isRemoteFile = entry?.file?.source === "remote";
 </script>
 
 <div class="ctx" style="left:{x}px; top:{y}px" on:click|stopPropagation>
@@ -45,26 +47,26 @@
     <button class="mi" disabled>New directory</button>
     <button class="mi" disabled>Sort by</button>
   {:else if entry.is_dir}
-    <button class="mi" on:click={() => run(onSend)}>Send directory…</button>
-    <button class="mi" on:click={() => run(onDownload)}>Download .tar.gz</button>
-    <button class="mi" on:click={() => run(onTags)}>Tags…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onSend)}>Send directory…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onDownload)}>Download .tar.gz</button>
+    <button class="mi" disabled on:click={() => run(onTags)}>Tags…</button>
     <button class="mi" on:click={() => run(onCopyPath)}>Copy path</button>
     <div class="sep"></div>
-    <button class="mi danger" on:click={() => run(onDelete)}>Delete all files</button>
+    <button class="mi danger" disabled={isRemoteFile} on:click={() => run(onDelete)}>Delete all files</button>
   {:else}
     <button class="mi" on:click={() => run(onView)}>Quick look</button>
-    <button class="mi" on:click={() => run(onSend)}>Send to node…</button>
-    <button class="mi" on:click={() => run(onDiff)}>Diff…</button>
-    <button class="mi" on:click={() => run(onStatus)}>Check fleet status</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onSend)}>Send to node…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onDiff)}>Diff…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onStatus)}>Check fleet status</button>
     <div class="sep"></div>
     <button class="mi" on:click={() => run(onDownload)}>Download</button>
-    <button class="mi" on:click={() => run(onRename)}>Rename…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onRename)}>Rename…</button>
     <button class="mi" on:click={() => run(onCopyPath)}>Copy path</button>
-    <button class="mi" on:click={() => run(onTags)}>Tags…</button>
+    <button class="mi" disabled={isRemoteFile} on:click={() => run(onTags)}>Tags…</button>
     <div class="sep"></div>
     <button class="mi" on:click={() => run(onView)}>Get Info</button>
     <div class="sep"></div>
-    <button class="mi danger" on:click={() => run(onDelete)}>Delete</button>
+    <button class="mi danger" disabled={isRemoteFile} on:click={() => run(onDelete)}>Delete</button>
   {/if}
 </div>
 

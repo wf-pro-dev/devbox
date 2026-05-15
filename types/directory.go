@@ -1,5 +1,12 @@
 package types
 
+type DirectoryStats struct {
+	TotalSize        int64  `json:"total_size"`
+	LatestUpdatedAt  string `json:"latest_updated_at"`
+	OldestCreatedAt  string `json:"oldest_created_at"`
+	OldestUploadedBy string `json:"oldest_uploaded_by"`
+}
+
 // DirEntry is one item in a virtual-directory listing.
 // IsDir distinguishes a virtual sub-directory (collapsed CommonPrefix) from a
 // concrete file.
@@ -19,13 +26,15 @@ type DirEntry struct {
 	// One for file entries.
 	FileCount int `json:"file_count,omitempty"`
 
+	Stats *DirectoryStats `json:"stats,omitempty"`
+
 	// File is set only for file entries.
 	// Nil for directory entries.
 	File *File `json:"file,omitempty"`
 }
 
 // DirListing is the response body for GET /dirs and GET /dirs/{dir}.
-// A single shape serves both the CLI (JSON decode into tabwriter output) and
+// A single shapeBserves both the CLI (JSON decode into tabwriter output) and
 // the web frontend (column-view rendering).
 type DirListing struct {
 	// Prefix is the canonical directory prefix that was listed: "/myapp/".

@@ -134,6 +134,8 @@ func listingFromFiles(h *dirsHandler, files []db.File, prefix string, deep bool)
 			f := e.File // local copy for a stable address
 			entry.File = f
 			entry.File.Tags = tagMap[f.ID]
+		} else {
+			entry.Stats = e.Stats
 		}
 		listing.Entries = append(listing.Entries, entry)
 	}

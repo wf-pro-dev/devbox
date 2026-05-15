@@ -35,6 +35,11 @@ server {
     location /dirs   { 
         proxy_pass ${BACKEND_URL}; 
     }
+
+    location /locations   { 
+        proxy_pass ${BACKEND_URL}; 
+    }
+
     location /peers  { 
         proxy_pass ${BACKEND_URL};
     }

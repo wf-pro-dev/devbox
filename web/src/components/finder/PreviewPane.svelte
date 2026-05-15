@@ -10,6 +10,7 @@
   export let onDownload: () => void = () => {};
   export let onDelete: () => void = () => {};
   export let onTagsUpdated: (f: File) => void = () => {};
+  $: isRemote = entry?.file?.source === "remote";
 </script>
 
 <aside class="preview">
@@ -25,8 +26,8 @@
           <button on:click={onView}>View</button>
         {/if}
         <button on:click={onDownload}>Download</button>
-        <button class="primary" on:click={onSend}>Send</button>
-        <button class="danger" on:click={onDelete}>Delete</button>
+        <button class="primary" on:click={onSend} disabled={isRemote}>Send</button>
+        <button class="danger" on:click={onDelete} disabled={isRemote}>Delete</button>
       </div>
     </div>
 
@@ -40,7 +41,7 @@
           <div class="k">Size</div><div class="v">{formatBytes(entry.file.size)}</div>
           <div class="k">Kind</div><div class="v">{entry.file.language || "text"}</div>
           <div class="k">Version</div><div class="v">v{entry.file.version}</div>
-          <div class="k">By</div><div class="v">{entry.file.uploaded_by}</div>
+          <div class="k">By</div><div class="v">{entry.file.hostname || entry.file.uploaded_by || "—"}</div>
           <div class="k">Created</div><div class="v">{formatDate(entry.file.created_at)}</div>
           <div class="k">Path</div><div class="v">{entry.file.path}</div>
           <div class="k">Description</div><div class="v">{entry.file.description || "—"}</div>

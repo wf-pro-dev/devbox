@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { api, getDirectory, listDirectories } from "../../api";
-  import type { DirEntry } from "../../types";
+  import { api, getDirectory, getLocationDirectory, getLocationDirs, listDirectories } from "../../api";
+  import type { DirEntry, FinderLocation } from "../../types";
   import { fileIcon, folderIcon } from "./icons";
   import { draggable, droppable, type DragDropState } from "@thisux/sveltednd";
   import { toast } from "svelte-sonner";
-  import { joinPath } from "./entryPaths";
+  import { entryPath, joinPath } from "./entryPaths";
 
   export let prefix = "/";
+  export let location: FinderLocation = { kind: "local" };
   export let activeTag = "";
   export let selectedEntry: DirEntry | null = null;
   export let iconSize = 84;
@@ -23,9 +24,30 @@
   let entries: DirEntry[] = [];
   let dragTarget = "";
   let movingFileId = "";
+  let loadSeq = 0;
+
+  function remoteRootEntries(listings: { prefix: string }[]): DirEntry[] {
+    return listings.map((listing) => {
+      const trimmed = listing.prefix.replace(/\/$/, "");
+      const name = trimmed.split("/").filter(Boolean).at(-1) ?? listing.prefix;
+      return {
+        name,
+        is_dir: true,
+        prefix: listing.prefix,
+        file_count: 0,
+        stats: { total_size: 0 },
+      } as DirEntry;
+    });
+  }
 
   async function load() {
-    const listing = prefix === "/" ? await listDirectories(activeTag) : await getDirectory(prefix, activeTag);
+    const seq = ++loadSeq;
+    const listing = location.kind === "remote" && location.hostname
+      ? (prefix === "/"
+        ? { prefix, entries: remoteRootEntries(await getLocationDirs(location.hostname)) }
+        : await getLocationDirectory(location.hostname, prefix))
+      : (prefix === "/" ? await listDirectories(activeTag) : await getDirectory(prefix, activeTag));
+    if (seq !== loadSeq) return;
     entries = [...listing.entries].sort((a, b) => {
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -34,6 +56,7 @@
   }
 
   async function handleDrop(state: DragDropState<DirEntry>, targetDir: DirEntry) {
+    if (location.kind !== "local") return;
     dragTarget = "";
     const dragged = state.draggedItem;
     if (!dragged?.file || !targetDir.prefix) return;
@@ -68,7 +91,7 @@
           class:drop-target={dragTarget === entry.prefix}
           role="button"
           tabindex="0"
-          use:droppable={{ container: prefix, callbacks: { onDragEnter: () => dragTarget = entry.prefix || "", onDragLeave: () => dragTarget = "", onDrop: (data: DirEntry) => handleDrop(data, entry) } }}
+          use:droppable={location.kind === "local" ? { container: prefix, callbacks: { onDragEnter: () => dragTarget = entry.prefix || "", onDragLeave: () => dragTarget = "", onDrop: (data: DirEntry) => handleDrop(data, entry) } } : undefined}
           on:click={() => onSelect(entry)}
           on:dblclick={() => onOpen(entry)}
           on:keydown={(e) => e.key === "Enter" && onOpen(entry)}
@@ -86,11 +109,11 @@
       {#each fileEntries as entry}
         <div
           class="gc"
-          class:sel={selectedEntry?.file?.id === entry.file?.id}
+          class:sel={entryPath(selectedEntry) === entryPath(entry) && (selectedEntry?.file?.hostname ?? location.hostname ?? "") === (entry.file?.hostname ?? location.hostname ?? "")}
           class:moving={movingFileId === entry.file?.id}
           role="button"
           tabindex="0"
-          use:draggable={{ container: prefix, dragData: entry }}
+          use:draggable={location.kind === "local" ? { container: prefix, dragData: entry } : undefined}
           on:click={() => onSelect(entry)}
           on:dblclick={() => onOpen(entry)}
           on:keydown={(e) => e.key === "Enter" && onOpen(entry)}

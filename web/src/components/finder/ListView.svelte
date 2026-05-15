@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { api, getDirectory, listDirectories } from "../../api";
-  import type { DirEntry } from "../../types";
+  import { api, getDirectory, getLocationDirectory, getLocationDirs, listDirectories } from "../../api";
+  import type { DirEntry, FinderLocation } from "../../types";
   import { toast } from "svelte-sonner";
   import type { DragDropState } from "@thisux/sveltednd";
   import ListDirectoryRow from "./ListDirectoryRow.svelte";
   import ListFileRow from "./ListFileRow.svelte";
-  import { joinPath } from "./entryPaths";
-  import { computeDirectoryStats, type DirectoryStats } from "./dirStats";
+  import { entryPath, joinPath } from "./entryPaths";
 
   export let prefix = "/";
+  export let location: FinderLocation = { kind: "local" };
   export let activeTag = "";
   export let selectedEntry: DirEntry | null = null;
   export let invalidate = 0;
@@ -25,7 +25,7 @@
   let sortDir: 1 | -1 = 1;
   let dragTarget = "";
   let movingFileId = "";
-  let directoryStats: Record<string, DirectoryStats> = {};
+  let loadSeq = 0;
 
   function baseSort(items: DirEntry[]) {
     return [...items].sort((a, b) => {
@@ -37,11 +37,30 @@
     });
   }
 
+  function remoteRootEntries(listings: { prefix: string }[]): DirEntry[] {
+    return listings.map((listing) => {
+      const trimmed = listing.prefix.replace(/\/$/, "");
+      const name = trimmed.split("/").filter(Boolean).at(-1) ?? listing.prefix;
+      return {
+        name,
+        is_dir: true,
+        prefix: listing.prefix,
+        file_count: 0,
+        stats: { total_size: 0 },
+      } as DirEntry;
+    });
+  }
+
   async function load() {
-    const listing = prefix === "/" ? await listDirectories(activeTag) : await getDirectory(prefix, activeTag);
+    const seq = ++loadSeq;
+    const listing = location.kind === "remote" && location.hostname
+      ? (prefix === "/"
+        ? { prefix, entries: remoteRootEntries(await getLocationDirs(location.hostname)) }
+        : await getLocationDirectory(location.hostname, prefix))
+      : (prefix === "/" ? await listDirectories(activeTag) : await getDirectory(prefix, activeTag));
+    if (seq !== loadSeq) return;
     entries = baseSort(listing.entries);
     onEntriesLoaded(prefix, entries);
-    hydrateDirectoryStats(entries);
   }
 
   function setSort(field: typeof sortField) {
@@ -55,10 +74,14 @@
   }
 
   function isSelected(entry: DirEntry) {
-    return entry.is_dir ? selectedEntry?.prefix === entry.prefix : selectedEntry?.file?.id === entry.file?.id;
+    if (!selectedEntry) return false;
+    if (entry.is_dir) return selectedEntry.prefix === entry.prefix;
+    return entryPath(selectedEntry) === entryPath(entry) &&
+      (selectedEntry.file?.hostname ?? location.hostname ?? "") === (entry.file?.hostname ?? location.hostname ?? "");
   }
 
   async function handleDrop(state: DragDropState<DirEntry>, targetDir: DirEntry) {
+    if (location.kind !== "local") return;
     dragTarget = "";
     const dragged = state.draggedItem;
     if (!dragged?.file || !targetDir.prefix) return;
@@ -69,26 +92,11 @@
       await api.moveFile(dragged.file.id, newPath);
       entries = baseSort(entries.filter((entry) => entry.file?.id !== dragged.file?.id));
       onEntriesLoaded(prefix, entries);
-      hydrateDirectoryStats(entries);
       toast.success(`Moved ${dragged.name}`);
     } catch (e: unknown) {
       toast.error((e as Error).message);
     } finally {
       movingFileId = "";
-    }
-  }
-
-  async function hydrateDirectoryStats(items: DirEntry[]) {
-    const dirs = items.filter((entry) => entry.is_dir && entry.prefix);
-    for (const dir of dirs) {
-      const dirPrefix = dir.prefix!;
-      if (directoryStats[dirPrefix]) continue;
-      try {
-        const stats = await computeDirectoryStats(dirPrefix);
-        directoryStats = { ...directoryStats, [dirPrefix]: stats };
-      } catch {
-        directoryStats = { ...directoryStats, [dirPrefix]: { totalSize: 0, latestUpdated: "", oldestEntry: null } };
-      }
     }
   }
 
@@ -138,19 +146,17 @@
             {entry}
             {prefix}
             selected={isSelected(entry)}
-            totalSize={directoryStats[entry.prefix || ""]?.totalSize ?? 0}
-            latestUpdated={directoryStats[entry.prefix || ""]?.latestUpdated ?? ""}
-            oldestEntry={directoryStats[entry.prefix || ""]?.oldestEntry ?? null}
             {onSelect}
             {onOpen}
             {onContextMenu}
             {onQuickSend}
             {onQuickDownload}
             {onQuickDelete}
+            droppableEnabled={location.kind === "local"}
             onDragEnter={(entry) => dragTarget = entry.prefix || ""}
             onDragLeave={() => dragTarget = ""}
             onDrop={handleDrop}
-            
+            dragTarget={dragTarget === entry.prefix}
           />
         {:else}
           <ListFileRow
@@ -164,6 +170,7 @@
             {onQuickDownload}
             {onQuickDelete}
             moving={movingFileId === entry.file?.id}
+            dragEnabled={location.kind === "local"}
           />
         {/if}
       {/each}

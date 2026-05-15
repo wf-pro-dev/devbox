@@ -1,18 +1,19 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import { api, formatBytes, formatDate, langColor } from "../api";
+  import { api, formatBytes, formatDate, langColor, locationFileContentURL } from "../api";
   import SendModal from "./SendModal.svelte";
   import UpdateFileModal from "./UpdateFileModal.svelte";
   import VersionRow from "./VersionRow.svelte";
   import FleetStatusTab from "./FleetStatusTab.svelte";
   import DiffTab from "./DiffTab.svelte";
-  import type { File, Version, UpdateResponse } from "../types";
+  import type { File, FinderLocation, Version, UpdateResponse } from "../types";
   import { toast } from "svelte-sonner";
 
   import { HighlightAuto, LineNumbers } from "svelte-highlight";
   import { github } from "svelte-highlight/styles";
 
   export let file: File;
+  export let location: FinderLocation = { kind: "local" };
   let language = "text";
 
   const dispatch = createEventDispatcher<{
@@ -23,6 +24,7 @@
 
   type Tab = "preview" | "meta" | "versions" | "status" | "diff";
   let tab: Tab = "preview";
+  $: isRemote = file.source === "remote" || location.kind === "remote";
 
   // Diff tab: node pre-selected when "View diff →" is clicked from Status tab
   let diffPreselectedNode = '';
@@ -57,7 +59,11 @@
     content = "";
     editing = false;
     try {
-      const res = await fetch(`/files/${file.id}`);
+      const res = await fetch(
+        isRemote && location.hostname
+          ? locationFileContentURL(location.hostname, file.path)
+          : `/files/${file.id}`,
+      );
       content = await res.text();
     } catch {
       content = "(could not load content)";
@@ -69,6 +75,7 @@
   // ── Preview: inline editor ─────────────────────────────────────────────────
 
   function startEdit() {
+    if (isRemote) return;
     editorContent = content;
     editing = true;
   }
@@ -79,6 +86,7 @@
   }
 
   async function saveEdit() {
+    if (!file.id) return;
     toast(`Save "${shortText(file.file_name)}"?`, {
       action: {
         label: "Confirm",
@@ -140,6 +148,7 @@
   // ── Versions ───────────────────────────────────────────────────────────────
 
   async function loadVersions() {
+    if (isRemote || !file.id) return;
     if (versions.length) return;
     versionsLoading = true;
     try {
@@ -152,6 +161,7 @@
   }
 
   async function handleRollback(v: number) {
+    if (!file.id) return;
     if (!confirm(`Rollback to version ${v}?`)) return;
     try {
       const updated = await api.rollback(file.id, v);
@@ -174,6 +184,7 @@
   }
 
   async function deleteFile() {
+    if (isRemote || !file.id) return;
     toast(`Delete "${shortText(file.file_name)}"?`, {
       action: {
         label: "Confirm",
@@ -196,6 +207,7 @@
   }
 
   async function addTag() {
+    if (isRemote || !file.id) return;
     const tag = newTag.trim().toLowerCase();
     if (!tag) return;
     try {
@@ -211,6 +223,7 @@
   }
 
   async function removeTag(tag: string) {
+    if (isRemote || !file.id) return;
     try {
       await api.removeTag(file.id, tag);
       const updated = await api.getFileMeta(file.id);
@@ -231,6 +244,7 @@
   }
 
   async function saveDescription() {
+    if (isRemote || !file.id) return;
     savingDescription = true;
     try {
       const updated = await api.editMeta(file.id, {
@@ -267,7 +281,7 @@
     if (t !== "diff") diffPreselectedNode = '';
   }
 
-  $: file.id, loadContent();
+  $: `${file.id ?? ""}:${file.path}:${file.hostname ?? ""}:${location.hostname ?? ""}`, loadContent();
 </script>
 
 <svelte:head>
@@ -290,13 +304,13 @@
         <span class="lang" style="--c:{langColor(file.language)}"
           >{file.language || "text"}</span
         >
-        {#if file.version > 1}
+        {#if !isRemote && file.version > 1}
           <span class="version-badge">v{file.version}</span>
         {/if}
       </div>
       <div class="header-right">
         <button class="icon-btn" title="Download">
-          <a href="/files/{file.id}" download={file.file_name} class="dl-link">
+          <a href={isRemote && location.hostname ? locationFileContentURL(location.hostname, file.path) : `/files/${file.id}`} download={file.file_name} class="dl-link">
             <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
               <path
                 d="M8 2v8M5 7l3 3 3-3"
@@ -317,6 +331,7 @@
         <button
           class="icon-btn"
           title="Deliver"
+          disabled={isRemote}
           on:click={() => (showDeliver = true)}
         >
           <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
@@ -332,7 +347,7 @@
         <button
           class="icon-btn danger"
           title="Delete"
-          disabled={deleting}
+          disabled={isRemote || deleting}
           on:click={deleteFile}
         >
           <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
@@ -360,7 +375,7 @@
 
     <!-- ── Tabs ─────────────────────────────────────────────────────────── -->
     <div class="tab-bar">
-      {#each (["preview", "meta", "versions", "status", "diff"] as Tab[]) as t}
+      {#each ((isRemote ? ["preview", "meta"] : ["preview", "meta", "versions", "status", "diff"]) as Tab[]) as t}
         <button
           class="tab"
           class:active={tab === t}
@@ -429,7 +444,7 @@
                   {/if}
                 </button>
                 <div class="toolbar-sep"></div>
-                <button class="tool-btn" on:click={startEdit}>
+                <button class="tool-btn" disabled={isRemote} on:click={startEdit}>
                   <svg viewBox="0 0 14 14" fill="none" width="11" height="11">
                     <path
                       d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5z"
@@ -442,6 +457,7 @@
                 </button>
                 <button
                   class="tool-btn"
+                  disabled={isRemote}
                   on:click={() => (showUpdateModal = true)}
                 >
                   <svg viewBox="0 0 14 14" fill="none" width="11" height="11">
@@ -505,8 +521,10 @@
       {:else if tab === "meta"}
         <div class="meta-pane">
           <div class="meta-grid">
-            <span class="ml">File ID</span>
-            <span class="mv mono">{file.id}</span>
+            {#if !isRemote}
+              <span class="ml">File ID</span>
+              <span class="mv mono">{file.id}</span>
+            {/if}
 
             <span class="ml">File name</span>
             <span class="mv mono">{file.file_name}</span>
@@ -529,11 +547,13 @@
               ></span
             >
 
-            <span class="ml">Version</span>
-            <span class="mv mono">v{file.version}</span>
+            {#if !isRemote}
+              <span class="ml">Version</span>
+              <span class="mv mono">v{file.version}</span>
+            {/if}
 
-            <span class="ml">Uploaded by</span>
-            <span class="mv mono">{file.uploaded_by}</span>
+            <span class="ml">{isRemote ? "Hostname" : "Uploaded by"}</span>
+            <span class="mv mono">{isRemote ? file.hostname : file.uploaded_by}</span>
 
             <span class="ml">Created</span>
             <span class="mv">{formatDate(file.created_at)}</span>
@@ -592,10 +612,13 @@
               {/if}
             </div>
 
-            <span class="ml">SHA-256</span>
-            <span class="mv mono sha">{file.sha256}</span>
+            {#if !isRemote}
+              <span class="ml">SHA-256</span>
+              <span class="mv mono sha">{file.sha256}</span>
+            {/if}
           </div>
 
+          {#if !isRemote}
           <div class="tags-section">
             <span class="section-label">Tags</span>
             <div class="tags-row">
@@ -615,6 +638,7 @@
               </div>
             </div>
           </div>
+          {/if}
         </div>
 
         <!-- VERSIONS TAB -->
@@ -667,11 +691,11 @@
   </div>
 </div>
 
-{#if showDeliver}
+{#if showDeliver && !isRemote}
   <SendModal {file} on:close={() => (showDeliver = false)} />
 {/if}
 
-{#if showUpdateModal}
+{#if showUpdateModal && !isRemote}
   <UpdateFileModal
     {file}
     on:close={() => (showUpdateModal = false)}

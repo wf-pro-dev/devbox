@@ -8,9 +8,7 @@
   export let prefix = "/";
   export let selected = false;
   export let dragTarget = false;
-  export let totalSize = 0;
-  export let latestUpdated = "";
-  export let oldestEntry: DirEntry | null = null;
+  export let droppableEnabled = true;
   export let onSelect: (entry: DirEntry) => void = () => {};
   export let onOpen: (entry: DirEntry) => void = () => {};
   export let onContextMenu: (e: MouseEvent, entry: DirEntry) => void = () => {};
@@ -26,14 +24,14 @@
   class:selected
   class:drag-target={dragTarget}
   class="container"
-  use:droppable={{
+  use:droppable={droppableEnabled ? {
     container: prefix,
     callbacks: {
       onDragEnter: () => onDragEnter(entry),
       onDragLeave: () => onDragLeave(entry),
       onDrop: (state: DragDropState<DirEntry>) => onDrop(state, entry),
     },
-  }}
+  } : undefined}
   on:click={() => onSelect(entry)}
   on:dblclick={() => onOpen(entry)}
   on:contextmenu|preventDefault={(e) => onContextMenu(e, entry)}
@@ -45,15 +43,15 @@
     <span class="nm">{entry.name}/</span>
   </td>
   <td >folder</td>
-  <td>{formatBytes(totalSize)}</td>
+  <td>{formatBytes(entry.stats?.total_size ?? 0)}</td>
   <td >-</td>
   <td >—</td>
-  <td >{oldestEntry ? oldestEntry.file?.uploaded_by : "-"}</td>
-  <td>{latestUpdated ? formatDateShort(latestUpdated) : "—"}</td>
+  <td >{entry.stats?.oldest_uploaded_by || "-"}</td>
+  <td>{entry.stats?.latest_updated_at ? formatDateShort(entry.stats.latest_updated_at) : "—"}</td>
   <td class="actions">
-    <button aria-label="Send" title="Send" on:click|stopPropagation={() => onQuickSend(entry)}><i class="ti ti-send"></i></button>
+    <button aria-label="Send" title="Send" disabled={!droppableEnabled} on:click|stopPropagation={() => onQuickSend(entry)}><i class="ti ti-send"></i></button>
     <button aria-label="Download" title="Download" on:click|stopPropagation={() => onQuickDownload(entry)}><i class="ti ti-download"></i></button>
-    <button aria-label="Delete" title="Delete" class="danger" on:click|stopPropagation={() => onQuickDelete(entry)}><i class="ti ti-trash"></i></button>
+    <button aria-label="Delete" title="Delete" class="danger" disabled={!droppableEnabled} on:click|stopPropagation={() => onQuickDelete(entry)}><i class="ti ti-trash"></i></button>
   </td>
 </tr>
 
@@ -117,6 +115,10 @@
   }
   .actions button:hover {
     background: rgba(255, 255, 255, 0.8);
+  }
+  .actions button:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
   tr.selected .actions button:hover {
     background: rgba(43, 92, 230, 0.1);
